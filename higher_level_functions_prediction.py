@@ -1177,7 +1177,7 @@ class higherLevel(object):
     
     def plot_psychometric_sigma(self,):
         # Plots the sigma parameters from psychometric curve fits:
-        # updating_tone_mapping1 vs. revision_tone_mapping2 (both 80% conditions)
+        # updating_tone_mapping1 vs. revision_tone_mapping2
         # Bar plots (1,2): Accuracy, then pupil dilation
         
         dvs = ['accuracy','pupil_target_locked']
