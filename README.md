@@ -5,6 +5,6 @@ Authors: Danaja Rutar, Olympia Colizoli*, Luc Selen, Lukas Spieß, Johan Kwistho
 
 *coded this repository
 
-All functions are run from "run_analysis_prediction.py".
+All functions are run from "analysis/run_analysis_prediction.py".
 You can isolate the preprocessing, trial-level, and higher-level functions.
-To run the higher-level functions alone, the processed datafile is given for convenience "task-prediction_subjects.csv".
+To run the higher-level functions alone, the processed datafile is given for convenience "derivatives/data_frames/task-prediction_subjects.csv".
