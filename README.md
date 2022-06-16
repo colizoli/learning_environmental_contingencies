@@ -1,5 +1,5 @@
 # learning_environmental_contingencies
-Code belonging to the data set "Learning novel environmental contingencies by model revision"
+Code belonging to the data set "Differentiating Bayesian model updating and model revision based on their prediction error dynamics"
 
 Authors: Danaja Rutar, Olympia Colizoli*, Luc Selen, Lukas Spieß, Johan Kwisthout, Sabine Hunnius
 
