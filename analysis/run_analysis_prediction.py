@@ -121,9 +121,9 @@ if higher_level:
         pupil_time_of_interest  = pupil_time_of_interest     
         )
 
-    # higherLevel.higherlevel_log_conditions()     # computes mappings, accuracy, RT outliers and missing trials
+    # higherLevel.higherlevel_log_conditions()     # computes mappings, accuracy, and missing trials
     # higherLevel.higherlevel_get_phasics()        # computes phasic pupil for each subject (adds to log files)
-    # higherLevel.create_subjects_dataframe()      # combines all subjects' behavioral files: task-predictions_subjects.csv
+    # higherLevel.create_subjects_dataframe()      # combines all subjects' behavioral files: task-predictions_subjects.csv, flags RT outliers
     ''' Note: the functions after this are using: task-predictions_subjects.csv
     '''
     # higherLevel.dataframe_evoked_pupil_higher()  # per event of interest, outputs one dataframe or np.array? for all trials for all subject on pupil time series
