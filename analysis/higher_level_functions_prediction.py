@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # encoding: utf-8
 """
-Learning novel environmental contingencies by model revision
+Learning novel environmental contingencies 
+Higher Level Functions
 Python code O.Colizoli 2021
 Python 3.6
 """
@@ -22,12 +23,11 @@ import scipy.optimize as optim
 from scipy.optimize import curve_fit
 import scipy.interpolate as interpolate
 import statsmodels.api as sm
+import ptitprince as pt #raincloud plots
 
 #conda install -c conda-forge/label/gcc7 mne
 from copy import deepcopy
 import itertools
-import pingouin as pg # stats package (repeated measures ANOVAs with 3 or more factors not supported!)
-from pingouin import pairwise_ttests
 
 from IPython import embed as shell # used for debugging
 
@@ -182,7 +182,9 @@ class higherLevel(object):
             for sig in s_bar:
                 ax.hlines(((ax.get_ylim()[1] - ax.get_ylim()[0]) / yloc)+ax.get_ylim()[0], x[int(sig[0])]-(np.diff(x)[0] / 2.0), x[int(sig[1])]+(np.diff(x)[0] / 2.0), color=color, alpha=1, linewidth=2.5)
     
-
+    def fisher_transform(self,r):
+        # for statistical testing on correlation coefficients
+        return 0.5*np.log((1+r)/(1-r))
     
     def higherlevel_log_conditions(self,):
         # for each LOG file for each subject, computes mappings, accuracy, RT outliers (3 STD group level)
@@ -196,20 +198,20 @@ class higherLevel(object):
         # target 'target_ori': 45 degrees  = right orientation, 315 degrees = left orientation
         # counterbalancing: 'normal'
         
-        # normal congruency updating phase: combinations of cue, tone and target:
-        mapping1 = ['0_True_45','0_False_45','45_True_315','45_False_315']
-        mapping2 = ['0_True_315','0_False_315','45_True_45','45_False_45']
+        # normal congruency phase 1: combinations of cue, tone and target:
+        # mapping_normal = ['0_True_45','0_False_45','45_True_315','45_False_315']
+        # mapping_counter = ['0_True_315','0_False_315','45_True_45','45_False_45']
         
-        # models congruency flips after 200 trials: trials 1-200 updating, trials 201-400 revision
-        updating = np.arange(1,201) # excluding 201
-        revision = np.arange(201,401) # excluding 401
+        # models congruency flips after 200 trials: trials 1-200 phase1, trials 201-400 phase2
+        phase1 = np.arange(1,201) # excluding 201
+        phase2 = np.arange(201,401) # excluding 401
         
         # loop through subjects' log files
         # make a copy in derivatives folder to add phasics to
         for s,subj in enumerate(self.subjects):
             this_log = os.path.join(self.project_directory,subj,'beh','{}_{}_beh.csv'.format(subj,self.exp)) # copy source, output in derivatives folder
             this_df = pd.read_csv(os.path.join(self.source_directory,subj,'beh','{}_{}_beh.csv'.format(subj,self.exp))) # SOURCE DIR
-            
+
             ###############################
             # compute column for MAPPING
             # col values 'mapping1': mapping1 = 1, mapping2 = 0
@@ -219,7 +221,6 @@ class higherLevel(object):
                 (this_df['cue_ori'] == 0) & (this_df['play_tone'] == False) & (this_df['target_ori'] == 45), #'0_False_45'
                 (this_df['cue_ori'] == 45) & (this_df['play_tone'] == True) & (this_df['target_ori'] == 315), #'45_True_315'
                 (this_df['cue_ori'] == 45) & (this_df['play_tone'] == False) & (this_df['target_ori'] == 315), #'45_False_315'
-
                 ]
                 
             mapping_counter = [
@@ -232,28 +233,28 @@ class higherLevel(object):
                 
             values = [1,1,1,1]
             
-            if self.group[s]: # 1 for normal_order
+            if self.group[s]: # group 1 for normal_order
                 this_df['mapping1'] = np.select(mapping_normal, values)
-            else:
+            else: # 0 for counter group mapping
                 this_df['mapping1'] = np.select(mapping_counter, values)
             
             ###############################
             # compute column for MODEL PHASE
-            this_df['updating'] = np.array(this_df['trial_counter'] <= 200, dtype=int) # updating phase = 1, revision phase = 0
+            this_df['phase1'] = np.array(this_df['trial_counter'] <= 200, dtype=int) # phase1 = 1, phase2 = 0
             
             ###############################
             # compute column for MAPPING FREQUENCY
             frequency = [
-                # updating
-                (this_df['updating'] == 1) & (this_df['mapping1'] == 1) & (this_df['play_tone'] == 1), # mapping 1 updating tone 80%
-                (this_df['updating'] == 1) & (this_df['mapping1'] == 1) & (this_df['play_tone'] == 0), # mapping 1 updating no tone 80%
-                (this_df['updating'] == 1) & (this_df['mapping1'] == 0) & (this_df['play_tone'] == 1), # mapping 2 updating tone 20%
-                (this_df['updating'] == 1) & (this_df['mapping1'] == 0) & (this_df['play_tone'] == 0), # mapping 2 updating no tone 20%
-                # revision
-                (this_df['updating'] == 0) & (this_df['mapping1'] == 1) & (this_df['play_tone'] == 1), # mapping 1 updating tone 20% FLIP!!
-                (this_df['updating'] == 0) & (this_df['mapping1'] == 1) & (this_df['play_tone'] == 0), # mapping 1 updating no tone 80%
-                (this_df['updating'] == 0) & (this_df['mapping1'] == 0) & (this_df['play_tone'] == 1), # mapping 2 updating tone 80% FLIP
-                (this_df['updating'] == 0) & (this_df['mapping1'] == 0) & (this_df['play_tone'] == 0), # mapping 2 updating no tone 20%
+                # phase1
+                (this_df['phase1'] == 1) & (this_df['mapping1'] == 1) & (this_df['play_tone'] == 1), # mapping 1 phase1 tone 80%
+                (this_df['phase1'] == 1) & (this_df['mapping1'] == 1) & (this_df['play_tone'] == 0), # mapping 1 phase1 no tone 80%
+                (this_df['phase1'] == 1) & (this_df['mapping1'] == 0) & (this_df['play_tone'] == 1), # mapping 2 phase1 tone 20%
+                (this_df['phase1'] == 1) & (this_df['mapping1'] == 0) & (this_df['play_tone'] == 0), # mapping 2 phase1 no tone 20%
+                # phase2
+                (this_df['phase1'] == 0) & (this_df['mapping1'] == 1) & (this_df['play_tone'] == 1), # mapping 1 phase2 tone 20% FLIP!!
+                (this_df['phase1'] == 0) & (this_df['mapping1'] == 1) & (this_df['play_tone'] == 0), # mapping 1 phase2 no tone 80%
+                (this_df['phase1'] == 0) & (this_df['mapping1'] == 0) & (this_df['play_tone'] == 1), # mapping 2 phase2 tone 80% FLIP
+                (this_df['phase1'] == 0) & (this_df['mapping1'] == 0) & (this_df['play_tone'] == 0), # mapping 2 phase2 no tone 20%
                 ]
             values = [80,80,20,20,20,80,80,20]
             this_df['frequency'] = np.select(frequency, values)
@@ -315,7 +316,28 @@ class higherLevel(object):
                 print('subject {}, {} phasic pupil extracted {}'.format(subj,time_locked,pupil_time_of_interest))
         print('success: higherlevel_get_phasics')
         
-                
+    def higherlevel_add_baselines(self,):
+        # add a column for the pupil baselines for each event in the subjects' log files
+        
+        for s,subj in enumerate(self.subjects):
+            this_log = os.path.join(self.project_directory,subj,'beh','{}_{}_beh.csv'.format(subj,self.exp)) # derivatives folder
+            B = pd.read_csv(this_log) # behavioral file
+                        
+            # loop through each type of event to lock events to...
+            for t,time_locked in enumerate(self.time_locked):
+                # load evoked pupil file (all trials)
+                P = pd.read_csv(os.path.join(self.project_directory,subj,'beh','{}_{}_recording-eyetracking_physio_{}_pupil_baselines.csv'.format(subj,self.exp,time_locked))) 
+                P = P.loc[:, ~P.columns.str.contains('^Unnamed')] # remove all unnamed columns
+
+                # save baselines
+                B['pupil_baseline_{}'.format(time_locked)] = P['pupil_baseline_{}'.format(time_locked)]
+
+                #######################
+                B = B.loc[:, ~B.columns.str.contains('^Unnamed')] # remove all unnamed columns
+                B.to_csv(this_log)
+                print('subject {}, {} baseline pupil added'.format(subj,time_locked))
+        print('success: higherlevel_add_baselines')
+        
     def create_subjects_dataframe(self,):
         # combine behavior + phasic pupil dataframes ALL SUBJECTS
         # flags outliers based on RT (separate column) per subject
@@ -344,7 +366,7 @@ class higherLevel(object):
         missing = DF.groupby(['subject','keypress'])['keypress'].value_counts()
         missing.to_csv(os.path.join(self.dataframe_folder,'{}_behavior_counts_subject.csv'.format(self.exp)))
         # combination of conditions
-        missing = DF.groupby(['subject','mapping1','play_tone','correct','updating'])['keypress'].count()
+        missing = DF.groupby(['subject','mapping1','play_tone','correct','phase1'])['keypress'].count()
         missing.to_csv(os.path.join(self.dataframe_folder,'{}_behavior_counts_conditions.csv'.format(self.exp)))
         
         #####################
@@ -611,7 +633,7 @@ class higherLevel(object):
         # averaging in bin window BW
         # saves separate dataframes for the different combinations of factors
         
-        dvs = ['pupil_{}'.format('target_locked'),'reaction_time','correct']
+        dvs = ['pupil_{}'.format('target_locked'),'reaction_time','correct','pupil_baseline_{}'.format('target_locked')]
 
         for pupil_dv in dvs:
             
@@ -686,25 +708,108 @@ class higherLevel(object):
                     DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
                     DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
             
-                '''
-                ######## TONE x MAPPING x ACCURACY ########
-                '''
+                # Accuracy as factor of interest
                 if not pupil_dv == 'correct':
+                    '''
+                    ######## PHASE x TONE x MAPPING x ACCURACY ########
+                    '''
                     DFOUT = DF.groupby(['subject','bin_index','play_tone','mapping1','correct'])[pupil_dv].mean()
                     # save for RMANOVA format
                     DFANOVA = DFOUT.unstack(['mapping1','play_tone','correct','bin_index']) # put all conditions into columns
                     DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
                     DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*mapping1*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
+                    '''
+                    ######## FREQUENCY x ACCURACY ########
+                    '''
+                    DFOUT = DF.groupby(['subject','bin_index','frequency','correct'])[pupil_dv].mean()
+                    DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_frequency*correct_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
+                    
+                    # save for RMANOVA format
+                    DFANOVA = DFOUT.unstack(['correct','frequency','bin_index']) # put all conditions into columns
+                    DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
+                    DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_frequency*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
+                        
             else:
                 print('Error! Bin windows are not divisors of trial length')
         print('success: average_conditions')
+    
+    def plot_phasic_pupil_pe(self, BW):
+        # Phasic pupil target_locked interaction frequency and accuracy
+        # GROUP LEVEL DATA
+        # separate lines for correct, x-axis is frequency conditions
+        
+        ylim = [ 
+            [-1.5,1.5], # t1
+        ]
+        tick_spacer = [0.5]
+        
+        dvs = ['pupil_target_locked']
+        ylabels = ['Pupil response\n(% signal change)']
+        factor = ['bin_index','frequency','correct']
+        xlabel = 'Cue-target frequency'
+        xticklabels = ['20%','80%'] 
+        labels = ['Error','Correct']
+        colors = ['red','blue'] 
+        
+        xind = np.arange(len(xticklabels))
+        dot_offset = [0.1,-0.1]
+        
+        if BW < 100:
+            figsize = 10 
+        elif BW == 200:
+            figsize = 4
+        else:
+            figsize = 8
+        fig = plt.figure(figsize=(figsize,2*len(ylabels)))
+        
+        subplot_counter = 1
+        
+        for dvi,pupil_dv in enumerate(dvs):
+
+            DFIN = pd.read_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_frequency*correct_{}.csv'.format(self.exp,BW,pupil_dv)))
+            DFIN = DFIN.loc[:, ~DFIN.columns.str.contains('^Unnamed')] # drop all unnamed columns
+            
+            # Group average per BIN WINDOW
+            GROUP = pd.DataFrame(DFIN.groupby(factor)[pupil_dv].agg(['mean','std']).reset_index())
+            GROUP['sem'] = np.true_divide(GROUP['std'],np.sqrt(len(self.subjects)))
+            print(GROUP)
+            
+            for B in np.unique(GROUP['bin_index']): # subplot for each bin
+            
+                ax = fig.add_subplot(len(ylabels),np.max(GROUP['bin_index']),subplot_counter) # 1 subplot per bin window
+                subplot_counter += 1
+                ax.axhline(0, lw=1, alpha=1, color = 'k') # Add horizontal line at t=0
+                
+                MEANS = GROUP[GROUP['bin_index']==B] # get only current bin window
+                
+                # plot line graph
+                for x in[0,1]: # split by error, correct
+                    D = MEANS[MEANS['correct']==x]
+                    print(D)
+                    ax.errorbar(xind,np.array(D['mean']),yerr=np.array(D['sem']),fmt='-',elinewidth=1,label=labels[x],capsize=0, color=colors[x], alpha=1)
+                    ax.plot(xind,np.array(D['mean']),linestyle='-',label=labels[x],color=colors[x], alpha=1)
+
+                # set figure parameters
+                ax.set_title('{}'.format(pupil_dv))                
+                ax.set_ylabel(ylabels[dvi])
+                ax.set_xlabel(xlabel)
+                ax.set_xticks(xind)
+                ax.set_xticklabels(xticklabels)
+                ax.set_ylim(ylim[dvi])
+                ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(tick_spacer[dvi]))
+                ax.legend()
+        
+            sns.despine(offset=10, trim=True)
+            plt.tight_layout()
+        fig.savefig(os.path.join(self.figure_folder,'{}_BW{}_frequency*correct_lines.pdf'.format(self.exp, BW)))
+        print('success: plot_phasic_pupil_pe')
     
     def plot_tone_mapping_interaction_lines(self,BW):
         # Phasic pupil target_locked, split by trial block (phases) then play_tone*mapping1
         # GROUP LEVEL DATA
         # separate lines for tone
         # BW bin window
-        # interaction term = (m2_tone - m2_no_tone) - (m1_tone - m1_no_tone) # positive for updating, negative for flipped
+        # interaction term = (m2_tone - m2_no_tone) - (m1_tone - m1_no_tone) # positive for phase1, negative for flipped
         
         dvs = ['correct','reaction_time','pupil_{}'.format('target_locked')]
         ylabels = ['Accuracy (%)', 'RT (s)', 'Pupil response (% signal change)']
@@ -812,7 +917,109 @@ class higherLevel(object):
         fig.savefig(os.path.join(self.figure_folder,'{}_BW{}_play_tone*mapping1_lines.pdf'.format(self.exp,BW)))
         print('success: plot_tone_mapping_interaction_lines')
 
-    def psychometric_get_data(self, dv, updating, play_tone, frequency, subject):
+    def pupil_behav_correlation(self,BW):
+        # Correlates the accuracy and pupil response across the trial bins, for each subject
+        # Take the difference of the M2 vs. M1, check tone trials only, because these change between the two phases
+        # transform rho coefficient through fischer Z-score
+        # plots one example participant, and then makes a raincloud plot of the rho coefficients at group level
+        
+        DFOUT = pd.DataFrame()
+        DFOUT['subject'] = self.subjects
+        
+        ### FIGURE - raincloud plot
+        fig = plt.figure(figsize=(4,4))
+        counter = 1
+        
+        for pupil_dv in ['pupil_target_locked','pupil_baseline_target_locked']:
+        
+            DFB = pd.read_csv(os.path.join(self.trial_bin_folder,'task-prediction_BW{}_play_tone*mapping1_correct.csv'.format(BW)))
+            DFP = pd.read_csv(os.path.join(self.trial_bin_folder,'task-prediction_BW{}_play_tone*mapping1_{}.csv'.format(BW,pupil_dv)))
+        
+            #### DROP NO-TONE TRIALS
+            DFB = DFB[DFB['play_tone']==1].copy()
+            DFP = DFP[DFP['play_tone']==1].copy() 
+        
+            save_corr = []
+            for s,subject in enumerate(self.subjects):
+                this_b = DFB[DFB['subject']==subject]
+                this_p = DFP[DFP['subject']==subject]
+                # behav
+                this_b = this_b.pivot(index='bin_index',columns='mapping1')['correct']# get 2 cols for each mapping condition
+                this_b.dropna(inplace=True) # drop NaNs for subtraction
+                x = this_b[0]-this_b[1] # take the difference of the M2 - M1 trials
+                # pupil
+                this_p = this_p.pivot(index='bin_index',columns='mapping1')[pupil_dv]# get 2 cols for each mapping condition
+                this_p.dropna(inplace=True) # drop NaNs for subtraction
+                y = this_p[0]-this_p[1] # take the difference of the M2 - M1 trials
+            
+                rho,pval = stats.spearmanr(x,y)
+                rho_z = self.fisher_transform(rho)
+                save_corr.append(rho_z) # normalize for statistical inference
+                
+                if s==0: # plot just random subject
+                    ax = fig.add_subplot(2,2,counter) 
+                    counter += 1
+                    # all subjects in grey
+                    ax.plot(x, y, 'o', markersize=6, color='orange', fillstyle='none') # marker, line, black
+                    m, b = np.polyfit(x, y, 1)
+                    ax.plot(x, m*x+b, color='black',alpha=.5, label='subject {} tone trials'.format(subject))
+                    ax.set_title('M2-M1 difference, rho={}, p-val={}'.format(np.round(rho,2),np.round(pval,3)))
+                    ax.set_ylabel('{}'.format(pupil_dv))
+                    ax.set_xlabel('Accuracy')
+                    ax.legend()
+
+            DFOUT['rho_z_{}'.format(pupil_dv)] = save_corr
+            DFOUT.to_csv(os.path.join(self.jasp_folder,'task-prediction_BW{}_play_tone*mapping1_correlation.csv'.format(BW)))
+            print('{} mean rho_z={}'.format(pupil_dv, np.mean(save_corr)))
+
+            # raincloud plot
+            orient = "h"
+            width_viol = .5
+            width_box = .1
+            bw = .2 # sigma
+            linewidth = 1
+            cut = 0.
+            scale = "area"
+            jitter = 1
+            move = .2
+            offset = None
+            point_size = 2
+            pointplot = True
+            alpha = 0.5
+            dodge = True
+            linecolor = 'grey'
+
+            # Plot the repeated measures data
+            df_rep = DFOUT
+
+            dx = None
+            dy = "rho_z_{}".format(pupil_dv) 
+            dhue = None
+            hue_order = None
+            palette = None
+
+            ax = fig.add_subplot(2,2,counter) 
+            counter += 1
+
+            ax=pt.RainCloud(x = dx, y = dy, hue = dhue, data = df_rep,
+                          order = None, hue_order = hue_order,
+                          orient = orient, width_viol = width_viol, width_box = width_box,
+                          palette = palette, bw = bw, linewidth = linewidth, cut = cut,
+                          scale = scale, jitter = jitter, move = move, offset = offset,
+                          point_size = point_size, ax = ax, pointplot = pointplot,
+                          alpha = alpha, dodge = dodge, linecolor = linecolor , color='grey')
+                      
+            ax.axvline(0, lw=1, alpha=1, color = 'k') # Add vertical line at t=0
+            ax.set_title('Group, {}'.format(pupil_dv))
+            
+        # whole figure format
+        sns.despine(offset=10, trim=True)
+        plt.tight_layout()
+        fig.savefig(os.path.join(self.figure_folder,'task-prediction_BW{}_play_tone*mapping1_correlation.pdf'.format(BW)))
+        print('success: pupil_behav_correlation')
+        
+        
+    def psychometric_get_data(self, dv, phase1, play_tone, frequency, subject):
         # grabs the data for the condition of interest
         # dv = 'correct' for accuracy
         
@@ -832,9 +1039,9 @@ class higherLevel(object):
 
         # find half point of number of bins to get phase cutoff
         cutoff = np.max(T['bin_index'])/2
-        if updating == 1: # updating
+        if phase1 == 1: # phase1
             P = T[T['bin_index']<=cutoff].copy()  # get current phase only
-        else: # revision
+        else: # phase2
             P = T[T['bin_index']>cutoff].copy()  # get current phase only
         
         # select on frequency for pupil
@@ -851,13 +1058,13 @@ class higherLevel(object):
         y = np.array(C[dv])      # y-axis are values of factor for current condition
         return x,y
     
-    def psychometric_minimum_accuracy(self, x,y, updating, DFOUT):
+    def psychometric_minimum_accuracy(self, x,y, phase1, DFOUT):
         # loop through initial values for parameters, save cost to make sure not stuck in local minimums
         # mu, sigma, p0 are the sigmoid inputs
         
         # INITIAL GUESSES FOR MODEL FIT
         # ----------------------------
-        if updating==1:
+        if phase1==1:
             init_mu = [50,100,150]
         else:
             init_mu = [250,300,350]
@@ -866,12 +1073,12 @@ class higherLevel(object):
         # ----------------------------
         
         '''
-        Bounds and linear constraints - the bound definitely help fitting the revision phase
+        Bounds and linear constraints - the bound definitely help fitting the second phase
         '''
-        mu_bounds = [(201,400),(1,200)] # yes, flipped: (revision, updating)
+        mu_bounds = [(201,400),(1,200)] # yes, flipped: (phase2, phase1)
         
         # bounds (trial number), (slope), (y starting point)
-        bnds = (mu_bounds[updating], (1,200), (0, 1))
+        bnds = (mu_bounds[phase1], (1,200), (0, 1))
         lincon = optim.LinearConstraint([1, -3, 0], 0, 250) # linear constraints on curve fit
         
         # save minimums
@@ -891,7 +1098,7 @@ class higherLevel(object):
         # return the parameters with minimum cost function
         return min_params[np.argmin(min_cost)]
     
-    def psychometric_subplot_accuracy(self, fig, updating, play_tone, frequency, s, params, x,y):
+    def psychometric_subplot_accuracy(self, fig, phase1, play_tone, frequency, s, params, x,y):
         # for each subject, plot the data and the curve fits with minimum parameters
         
         mu    = params[0]
@@ -915,7 +1122,7 @@ class higherLevel(object):
         ax.set_ylim([-0.1,1.1])
         ax.set_yticks([0.0,0.2,0.4,0.6,0.8,1])
         ax.set_xlabel('Trial number')
-        # ax.set_xticks(xticks1[updating])
+        # ax.set_xticks(xticks1[phase1])
         if s<1:
             ax.legend()
         ax.axis("off")
@@ -959,26 +1166,26 @@ class higherLevel(object):
         # SAVE PARAMETERS OUTPUT FILE
         # ----------------------------
         output_filename = os.path.join(self.trial_bin_folder,'{}_BW1_psychometric_accuracy.csv'.format(self.exp))
-        cols = ['subject','updating','play_tone','frequency','mu','sigma','p0']
+        cols = ['subject','phase1','play_tone','frequency','mu','sigma','p0']
         DFOUT = pd.DataFrame(columns=cols)
         counter = 0 # row counter
         # ----------------------------
         
         # FIGURE PER PHASE
-        for updating in [1,0]:
+        for phase1 in [1,0]:
 
             # separate figure per phase
             fig = plt.figure(figsize=(4,13)) # large one A4
 
             # loop through subjects
             for s,subject in enumerate(self.subjects):
-                x,y = self.psychometric_get_data(dv, updating, play_tone, frequency, subject) # get data
-                [mu, sigma, p0] = self.psychometric_minimum_accuracy(x,y,updating,DFOUT)    # find minimum parameters
+                x,y = self.psychometric_get_data(dv, phase1, play_tone, frequency, subject) # get data
+                [mu, sigma, p0] = self.psychometric_minimum_accuracy(x,y,phase1,DFOUT)    # find minimum parameters
                 
                 # output parameters to dataframe on each iteration
                 DFOUT.loc[counter] = [
                     subject,        # subject
-                    int(updating),  # phase
+                    int(phase1),    # phase1
                     int(play_tone), # play_tone
                     int(frequency), # frequency
                     mu,             # mu
@@ -989,20 +1196,20 @@ class higherLevel(object):
                 counter += 1
                 
                 # SUBPLOT PER PARTICIPANT
-                self.psychometric_subplot_accuracy(fig, updating, play_tone, frequency, s, [mu,sigma,p0], x,y)
+                self.psychometric_subplot_accuracy(fig, phase1, play_tone, frequency, s, [mu,sigma,p0], x,y)
             # whole figure format, this phase
             # plt.tight_layout()
-            fig.savefig(os.path.join(self.figure_folder,'{}_psychometric_accuracy_updating{}.pdf'.format(self.exp,updating)))
+            fig.savefig(os.path.join(self.figure_folder,'{}_psychometric_accuracy_phase1{}.pdf'.format(self.exp,phase1)))
         print('success: psychometric_accuracy')
 
 
-    def psychometric_minimum_pupil(self, x,y, updating, DFOUT):
+    def psychometric_minimum_pupil(self, x,y, phase1, DFOUT):
         # loop through initial values for parameters, save cost to make sure not stuck in local minimums
         # mu, sigma, B, G are the sigmoid inputs for pupil
         
         # INITIAL GUESSES FOR MODEL FIT
         # ----------------------------
-        if updating==1:
+        if phase1==1:
             init_mu = [50,100,150]
         else:
             init_mu = [250,300,350]
@@ -1033,7 +1240,7 @@ class higherLevel(object):
         # return the parameters with minimum cost function
         return min_params[np.argmin(min_cost)]
     
-    def psychometric_subplot_pupil(self, fig, updating, play_tone, frequency, s, params, x,y):
+    def psychometric_subplot_pupil(self, fig, phase1, play_tone, frequency, s, params, x,y):
         # for each subject, plot the data and the curve fits with minimum parameters
         
         mu    = params[0]
@@ -1058,7 +1265,7 @@ class higherLevel(object):
         ax.set_ylim([-15,15])
         # ax.set_yticks([0.0,0.2,0.4,0.6,0.8,1])
         ax.set_xlabel('Trial number')
-        # ax.set_xticks(xticks1[updating])
+        # ax.set_xticks(xticks1[phase1])
         if s<1:
             ax.legend()
         ax.axis("off")
@@ -1102,26 +1309,26 @@ class higherLevel(object):
         # SAVE PARAMETERS OUTPUT FILE
         # ----------------------------
         output_filename = os.path.join(self.trial_bin_folder,'{}_BW1_psychometric_pupil_target_locked.csv'.format(self.exp))
-        cols = ['subject','updating','play_tone','frequency','mu','sigma','B','G']
+        cols = ['subject','phase1','play_tone','frequency','mu','sigma','B','G']
         DFOUT = pd.DataFrame(columns=cols)
         counter = 0 # row counter
         # ----------------------------
         
         # FIGURE PER PHASE
-        for updating in [1,0]: # updating, revision
+        for phase1 in [1,0]: # phase1, phase2
 
             # separate figure per phase
             fig = plt.figure(figsize=(4,13)) # large one A4
 
             # loop through subjects
             for s,subject in enumerate(self.subjects):
-                x,y = self.psychometric_get_data(dv, updating, play_tone, frequency, subject) # get data
-                [mu, sigma, B, G] = self.psychometric_minimum_pupil(x,y,updating,DFOUT)    # find minimum parameters
+                x,y = self.psychometric_get_data(dv, phase1, play_tone, frequency, subject) # get data
+                [mu, sigma, B, G] = self.psychometric_minimum_pupil(x,y,phase1,DFOUT)    # find minimum parameters
                 
                 # output parameters to dataframe on each iteration
                 DFOUT.loc[counter] = [
                     subject,        # subject
-                    int(updating),  # phase
+                    int(phase1),    # phase1
                     int(play_tone), # play_tone
                     int(frequency), # frequency
                     mu,             # mu
@@ -1133,10 +1340,10 @@ class higherLevel(object):
                 counter += 1
                 
                 # SUBPLOT PER PARTICIPANT
-                self.psychometric_subplot_pupil(fig, updating, play_tone, frequency, s, [mu,sigma,B,G], x,y)
+                self.psychometric_subplot_pupil(fig, phase1, play_tone, frequency, s, [mu,sigma,B,G], x,y)
             # whole figure format, this phase
             # plt.tight_layout()
-            fig.savefig(os.path.join(self.figure_folder,'{}_psychometric_pupil_updating{}.pdf'.format(self.exp,updating)))
+            fig.savefig(os.path.join(self.figure_folder,'{}_psychometric_pupil_phase1{}.pdf'.format(self.exp,phase1)))
         print('success: psychometric_pupil')
     
     def housekeeping_rmanova(self,):
@@ -1154,9 +1361,9 @@ class higherLevel(object):
                 DFOUT = DFOUT.loc[:, ~DFOUT.columns.str.contains('^Unnamed')] # drop all unnamed columns
                 # unstack parameters dataframe for rm-ANOVA
                 DFK = DFOUT.drop(columns=['mu','p0'])
-                DFK.set_index(['subject','updating','play_tone','frequency'],inplace=True)
-                DFK = DFK.unstack(['updating','play_tone','frequency'])
-                DFK.columns = DFK.columns.to_flat_index() #updating, play_tone, frequency
+                DFK.set_index(['subject','phase1','play_tone','frequency'],inplace=True)
+                DFK = DFK.unstack(['phase1','play_tone','frequency'])
+                DFK.columns = DFK.columns.to_flat_index() #phase1, play_tone, frequency
                 DFK.columns = ['u1_p1_100','u0_p1_100'] # all trials (80% and 20%)
                 DFK.reset_index(inplace=True)
                 DFK.to_csv(os.path.join(self.jasp_folder,'{}_psychometric_sigma_accuracy_rmanova.csv'.format(self.exp)))
@@ -1165,26 +1372,24 @@ class higherLevel(object):
                 DFOUT = DFOUT.loc[:, ~DFOUT.columns.str.contains('^Unnamed')] # drop all unnamed columns
                 # unstack parameters dataframe for rm-ANOVA
                 DFK = DFOUT.drop(columns=['mu','B','G'])        
-                DFK.set_index(['subject','updating','play_tone','frequency'],inplace=True)
-                DFK = DFK.unstack(['updating','play_tone','frequency'])
-                DFK.columns = DFK.columns.to_flat_index() #updating, play_tone, frequency
+                DFK.set_index(['subject','phase1','play_tone','frequency'],inplace=True)
+                DFK = DFK.unstack(['phase1','play_tone','frequency'])
+                DFK.columns = DFK.columns.to_flat_index() #phase1, play_tone, frequency
                 DFK.columns = ['u1_p1_80','u0_p1_80'] #only the 80% trials
                 DFK.reset_index(inplace=True)
                 DFK.to_csv(os.path.join(self.jasp_folder,'{}_psychometric_sigma_pupil_target_locked_rmanova.csv'.format(self.exp)))    
         print('success: housekeeping_rmanova')
         
-        
-    
     def plot_psychometric_sigma(self,):
         # Plots the sigma parameters from psychometric curve fits:
-        # updating_tone_mapping1 vs. revision_tone_mapping2
+        # phase1_tone_mapping1 vs. phase2_tone_mapping2
         # Bar plots (1,2): Accuracy, then pupil dilation
         
         dvs = ['accuracy','pupil_target_locked']
         
-        xticklabels = ['Updating','Revision'] # plot this updating first!
+        xticklabels = ['Phase 1','Phase 2'] # plot this phase1 first!
 
-        alphas = [1,0.5] # updating, revision
+        alphas = [1,0.5] # phase1, phase2
         
         xind = np.arange(len(xticklabels))
         bar_width = 0.35
@@ -1212,7 +1417,7 @@ class higherLevel(object):
             ################
             # plot bar graph
             ################
-            for ph,phase in enumerate(xticklabels): # updating first
+            for ph,phase in enumerate(xticklabels): # phase1 first
                 ax.bar(xind[ph],np.array(MEANS[ph]),yerr=np.array(SEMS[ph]), color='blue', alpha=alphas[ph])
                 print(np.array(MEANS[ph]))
             
@@ -1224,12 +1429,13 @@ class higherLevel(object):
             ax.set_ylabel('Sigma')
             ax.set_xticks(xind)
             ax.set_xticklabels(xticklabels)
-            # ax.legend()
+            # ax.legend()s
 
             # whole figure format
             sns.despine(offset=10, trim=True)
             plt.tight_layout()
             fig.savefig(os.path.join(self.figure_folder,'{}_psychometric_sigma_bars.pdf'.format(self.exp)))
         print('success: plot_psychometric_sigma')
+        
 
-            
+        

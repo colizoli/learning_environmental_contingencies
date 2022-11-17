@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 # encoding: utf-8
-#cols=['index','pupil','pupil_interp','pupil_bp','pupil_clean','pupil_psc'] #'pupil_zscore'
 """
 ================================================
-Analysis Danaja's decision task - pupil preprocessing
-O.Colizoli 2019
+Learning novel environmental contingencies 
+Pre-processing pupillometry
+Python code O.Colizoli 2021
+Python 3.6
 ================================================
 """
 
