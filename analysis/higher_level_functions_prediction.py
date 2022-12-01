@@ -376,6 +376,226 @@ class higherLevel(object):
         #####################
         print('success: create_subjects_dataframe')
 
+
+    def average_conditions(self,BW):
+        # averages the phasic pupil per subject PER CONDITION 
+        # averaging in bin window BW
+        # saves separate dataframes for the different combinations of factors
+        
+        dvs = ['pupil_{}'.format('target_locked'),'reaction_time','correct','pupil_baseline_{}'.format('target_locked')]
+
+        for pupil_dv in dvs:
+            
+            DF = pd.read_csv(os.path.join(self.dataframe_folder,'{}_subjects.csv'.format(self.exp)))
+            DF = DF.loc[:, ~DF.columns.str.contains('^Unnamed')] # drop all unnamed columns
+            DF.sort_values(by=['subject','trial_counter'],inplace=True)
+            DF.reset_index()
+            
+            if np.mod(DF.shape[0],BW) == 0: # check whether bin window is divisor of trial length
+            
+                # define bins before removing outliers (because unequal number of trials per subject)
+                ntrials = np.max(DF['trial_counter'])
+                nbins = ntrials/BW
+                nsubjects = np.unique(DF['subject'])
+
+                bin_index = [] # tag trials per bin
+                for bin_counter in np.arange(nbins):
+                    bin_index.append(np.repeat(bin_counter+1,BW))
+                bin_index = np.concatenate(bin_index)
+
+                DF['bin_index'] = np.tile(bin_index, len(nsubjects)) # repeat for all subjects in DF
+            
+                ############################
+                # drop outliers
+                DF = DF[DF['outlier_rt']==0]
+                ############################
+                
+                '''
+                ######## PUPIL DV ########
+                '''
+                # MEANS subject x correct (for psychometric function)
+                DFOUT = DF.groupby(['subject','bin_index'])[pupil_dv].mean()
+                DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_{}.csv'.format(self.exp,BW,pupil_dv))) # for psychometric curve fitting
+                
+                DFOUT = DF.groupby(['subject','bin_index','play_tone'])[pupil_dv].mean()
+                DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone_{}.csv'.format(self.exp,BW,pupil_dv))) # for psychometric curve fitting
+                                
+                '''
+                ######## TONE x MAPPING ########
+                '''
+                # MEANS subject x bin x tone x congruent
+                DFOUT = DF.groupby(['subject','bin_index','play_tone','mapping1'])[pupil_dv].mean()
+                DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone*mapping1_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
+                
+                # save for RMANOVA format
+                DFANOVA =  DFOUT.unstack(['mapping1','play_tone','bin_index']) 
+                DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
+                DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*mapping1_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
+                
+                '''
+                ######## TONE x FREQUENCY ########
+                '''
+                # MEANS subject x bin x tone x frequency
+                DFOUT = DF.groupby(['subject','bin_index','play_tone','frequency'])[pupil_dv].mean()
+                DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone*frequency_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
+                
+                # save for RMANOVA format
+                DFANOVA =  DFOUT.unstack(['frequency','play_tone','bin_index']) 
+                DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
+                DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*frequency_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
+                
+                '''
+                ######## TONE x CORRECT ########
+                '''
+                if not pupil_dv == 'correct':
+                    # MEANS subject x bin x tone x congruent
+                    DFOUT = DF.groupby(['subject','bin_index','play_tone','correct'])[pupil_dv].mean()
+                    DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone*correct_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
+                
+                    # save for RMANOVA format
+                    DFANOVA =  DFOUT.unstack(['correct','play_tone','bin_index']) 
+                    DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
+                    DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
+            
+                # Accuracy as factor of interest
+                if not pupil_dv == 'correct':
+                    '''
+                    ######## PHASE x TONE x MAPPING x ACCURACY ########
+                    '''
+                    DFOUT = DF.groupby(['subject','bin_index','play_tone','mapping1','correct'])[pupil_dv].mean()
+                    # save for RMANOVA format
+                    DFANOVA = DFOUT.unstack(['mapping1','play_tone','correct','bin_index']) # put all conditions into columns
+                    DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
+                    DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*mapping1*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
+                    '''
+                    ######## FREQUENCY x ACCURACY ########
+                    '''
+                    DFOUT = DF.groupby(['subject','bin_index','frequency','correct'])[pupil_dv].mean()
+                    DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_frequency*correct_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
+                    
+                    # save for RMANOVA format
+                    DFANOVA = DFOUT.unstack(['correct','frequency','bin_index']) # put all conditions into columns
+                    DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
+                    DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_frequency*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
+                        
+            else:
+                print('Error! Bin windows are not divisors of trial length')
+        print('success: average_conditions')
+    
+    def plot_tone_mapping_interaction_lines(self,BW):
+        # Phasic pupil target_locked, split by trial block (phases) then play_tone*mapping1
+        # GROUP LEVEL DATA
+        # separate lines for tone
+        # BW bin window
+        # interaction term = (m2_tone - m2_no_tone) - (m1_tone - m1_no_tone) # positive for phase1, negative for flipped
+        
+        dvs = ['correct','reaction_time','pupil_{}'.format('target_locked')]
+        ylabels = ['Accuracy (%)', 'RT (s)', 'Pupil response (% signal change)']
+        factor = ['bin_index','play_tone','mapping1']
+        
+        if BW < 100:
+            figsize = 10 
+        elif BW == 200:
+            figsize = 4
+        else:
+            figsize = 8
+        fig = plt.figure(figsize=(figsize,2*len(ylabels)))
+        subplot_counter = 1
+        
+        for dvi,pupil_dv in enumerate(dvs):
+
+            DFIN = pd.read_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone*mapping1_{}.csv'.format(self.exp,BW,pupil_dv)))
+            DFIN = DFIN.loc[:, ~DFIN.columns.str.contains('^Unnamed')] # drop all unnamed columns
+                        
+            # Group average per BIN WINDOW
+            GROUP = pd.DataFrame(DFIN.groupby(factor)[pupil_dv].agg(['mean','std']).reset_index())
+            GROUP['sem'] = np.true_divide(GROUP['std'],np.sqrt(len(self.subjects)))
+            print(GROUP)
+        
+            xticklabels = ['M1','M2'] # plot M1 first!
+            xind = np.arange(len(xticklabels))
+            bar_width = 0.35
+        
+            labels = ['No Tone','Tone']
+            colors = ['orange','orange']
+            alphas = [1, 1]
+            fmt = ['-', '--']
+                
+            for B in np.unique(GROUP['bin_index']): # subplot for each bin
+            
+                ax = fig.add_subplot(len(ylabels),np.max(GROUP['bin_index']),subplot_counter) # 1 subplot per bin window
+                subplot_counter += 1
+                ax.axhline(0, lw=1, alpha=1, color = 'k') # Add horizontal line at t=0
+                
+                #######################
+                # congruent*play_tone*correct
+                #######################                
+                MEANS = GROUP[GROUP['bin_index']==B] # get only current bin window
+                
+                if pupil_dv == 'correct': # percent correct instead of fraction / 1
+                    MEANS['mean'] = np.array(MEANS['mean'])*100
+                    MEANS['sem'] = np.array(MEANS['sem'])*100
+
+                # plot line graph
+                for x in [0,1]: # split by no_tone, tone
+                    D = MEANS[MEANS['play_tone']==x]
+                    # plot mapping1==1 first! flip D array
+                    ax.errorbar(xind,np.flip(D['mean']),yerr=np.flip(D['sem']),fmt=fmt[x],elinewidth=1,label=labels[x],capsize=0, color=colors[x], alpha=1)
+
+                # set figure parameters
+                ax.set_title('bin={}'.format(B))                
+                ax.set_ylabel(ylabels[dvi])
+                ax.set_xticks(xind)
+                ax.set_xticklabels(xticklabels)
+                if pupil_dv == 'reaction_time':
+                    ax.set_ylim([0.5,1.3])
+                elif pupil_dv == 'correct':
+                    ax.set_ylim([0,100])
+                else:
+                    ax.set_ylim([-2.5,3.5])
+                if B==1:
+                    ax.legend()
+            
+        # subplot grid 1 x bins
+        # yaxes in left-most plot only
+        if BW==25:
+            allaxes = fig.get_axes()
+            ###########
+            # first row
+            for ys in np.arange(2,17): 
+                allaxes[ys-1].get_xaxis().set_visible(False)
+                allaxes[ys-1].get_yaxis().set_visible(False)
+                allaxes[ys-1].spines['bottom'].set_visible(False)
+                allaxes[ys-1].spines['top'].set_visible(False)
+                allaxes[ys-1].spines['right'].set_visible(False)
+                allaxes[ys-1].spines['left'].set_visible(False)
+                
+            ###########
+            # second row
+            for ys in np.arange(18,33): # one extra hack
+                allaxes[ys-1].get_xaxis().set_visible(False)
+                allaxes[ys-1].get_yaxis().set_visible(False)
+                allaxes[ys-1].spines['bottom'].set_visible(False)
+                allaxes[ys-1].spines['top'].set_visible(False)
+                allaxes[ys-1].spines['right'].set_visible(False)
+                allaxes[ys-1].spines['left'].set_visible(False)
+                
+            ###########
+            # thrid row
+            for ys in np.arange(34,49): # one extra hack
+                allaxes[ys-1].get_yaxis().set_visible(False)
+                allaxes[ys-1].spines['top'].set_visible(False)
+                allaxes[ys-1].spines['right'].set_visible(False)
+                allaxes[ys-1].spines['left'].set_visible(False)
+    
+        # whole figure format
+        if BW==200:
+            sns.despine(offset=10, trim=True)
+            plt.tight_layout()
+        fig.savefig(os.path.join(self.figure_folder,'{}_BW{}_play_tone*mapping1_lines.pdf'.format(self.exp,BW)))
+        print('success: plot_tone_mapping_interaction_lines')
+        
+        
     def dataframe_evoked_pupil_higher(self):
         # Evoked pupil responses, split by self.factors and save as higher level dataframe
         # Need to combine evoked files with behavioral data frame, looping through subjects
@@ -628,397 +848,6 @@ class higherLevel(object):
         fig.savefig(os.path.join(self.figure_folder,'{}_evoked.pdf'.format(self.exp)))
         print('success: plot_evoked_pupil')
     
-    def average_conditions(self,BW):
-        # averages the phasic pupil per subject PER CONDITION 
-        # averaging in bin window BW
-        # saves separate dataframes for the different combinations of factors
-        
-        dvs = ['pupil_{}'.format('target_locked'),'reaction_time','correct','pupil_baseline_{}'.format('target_locked')]
-
-        for pupil_dv in dvs:
-            
-            DF = pd.read_csv(os.path.join(self.dataframe_folder,'{}_subjects.csv'.format(self.exp)))
-            DF = DF.loc[:, ~DF.columns.str.contains('^Unnamed')] # drop all unnamed columns
-            DF.sort_values(by=['subject','trial_counter'],inplace=True)
-            DF.reset_index()
-            
-            if np.mod(DF.shape[0],BW) == 0: # check whether bin window is divisor of trial length
-            
-                # define bins before removing outliers (because unequal number of trials per subject)
-                ntrials = np.max(DF['trial_counter'])
-                nbins = ntrials/BW
-                nsubjects = np.unique(DF['subject'])
-
-                bin_index = [] # tag trials per bin
-                for bin_counter in np.arange(nbins):
-                    bin_index.append(np.repeat(bin_counter+1,BW))
-                bin_index = np.concatenate(bin_index)
-
-                DF['bin_index'] = np.tile(bin_index, len(nsubjects)) # repeat for all subjects in DF
-            
-                ############################
-                # drop outliers
-                DF = DF[DF['outlier_rt']==0]
-                ############################
-                
-                '''
-                ######## PUPIL DV ########
-                '''
-                # MEANS subject x correct (for psychometric function)
-                DFOUT = DF.groupby(['subject','bin_index'])[pupil_dv].mean()
-                DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_{}.csv'.format(self.exp,BW,pupil_dv))) # for psychometric curve fitting
-                
-                DFOUT = DF.groupby(['subject','bin_index','play_tone'])[pupil_dv].mean()
-                DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone_{}.csv'.format(self.exp,BW,pupil_dv))) # for psychometric curve fitting
-                                
-                '''
-                ######## TONE x MAPPING ########
-                '''
-                # MEANS subject x bin x tone x congruent
-                DFOUT = DF.groupby(['subject','bin_index','play_tone','mapping1'])[pupil_dv].mean()
-                DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone*mapping1_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
-                
-                # save for RMANOVA format
-                DFANOVA =  DFOUT.unstack(['mapping1','play_tone','bin_index']) 
-                DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
-                DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*mapping1_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
-                
-                '''
-                ######## TONE x FREQUENCY ########
-                '''
-                # MEANS subject x bin x tone x frequency
-                DFOUT = DF.groupby(['subject','bin_index','play_tone','frequency'])[pupil_dv].mean()
-                DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone*frequency_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
-                
-                # save for RMANOVA format
-                DFANOVA =  DFOUT.unstack(['frequency','play_tone','bin_index']) 
-                DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
-                DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*frequency_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
-                
-                '''
-                ######## TONE x CORRECT ########
-                '''
-                if not pupil_dv == 'correct':
-                    # MEANS subject x bin x tone x congruent
-                    DFOUT = DF.groupby(['subject','bin_index','play_tone','correct'])[pupil_dv].mean()
-                    DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone*correct_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
-                
-                    # save for RMANOVA format
-                    DFANOVA =  DFOUT.unstack(['correct','play_tone','bin_index']) 
-                    DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
-                    DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
-            
-                # Accuracy as factor of interest
-                if not pupil_dv == 'correct':
-                    '''
-                    ######## PHASE x TONE x MAPPING x ACCURACY ########
-                    '''
-                    DFOUT = DF.groupby(['subject','bin_index','play_tone','mapping1','correct'])[pupil_dv].mean()
-                    # save for RMANOVA format
-                    DFANOVA = DFOUT.unstack(['mapping1','play_tone','correct','bin_index']) # put all conditions into columns
-                    DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
-                    DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*mapping1*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
-                    '''
-                    ######## FREQUENCY x ACCURACY ########
-                    '''
-                    DFOUT = DF.groupby(['subject','bin_index','frequency','correct'])[pupil_dv].mean()
-                    DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_frequency*correct_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
-                    
-                    # save for RMANOVA format
-                    DFANOVA = DFOUT.unstack(['correct','frequency','bin_index']) # put all conditions into columns
-                    DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
-                    DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_frequency*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
-                        
-            else:
-                print('Error! Bin windows are not divisors of trial length')
-        print('success: average_conditions')
-    
-    def plot_phasic_pupil_pe(self, BW):
-        # Phasic pupil target_locked interaction frequency and accuracy
-        # GROUP LEVEL DATA
-        # separate lines for correct, x-axis is frequency conditions
-        
-        ylim = [ 
-            [-1.5,1.5], # t1
-        ]
-        tick_spacer = [0.5]
-        
-        dvs = ['pupil_target_locked']
-        ylabels = ['Pupil response\n(% signal change)']
-        factor = ['bin_index','frequency','correct']
-        xlabel = 'Cue-target frequency'
-        xticklabels = ['20%','80%'] 
-        labels = ['Error','Correct']
-        colors = ['red','blue'] 
-        
-        xind = np.arange(len(xticklabels))
-        dot_offset = [0.1,-0.1]
-        
-        if BW < 100:
-            figsize = 10 
-        elif BW == 200:
-            figsize = 4
-        else:
-            figsize = 8
-        fig = plt.figure(figsize=(figsize,2*len(ylabels)))
-        
-        subplot_counter = 1
-        
-        for dvi,pupil_dv in enumerate(dvs):
-
-            DFIN = pd.read_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_frequency*correct_{}.csv'.format(self.exp,BW,pupil_dv)))
-            DFIN = DFIN.loc[:, ~DFIN.columns.str.contains('^Unnamed')] # drop all unnamed columns
-            
-            # Group average per BIN WINDOW
-            GROUP = pd.DataFrame(DFIN.groupby(factor)[pupil_dv].agg(['mean','std']).reset_index())
-            GROUP['sem'] = np.true_divide(GROUP['std'],np.sqrt(len(self.subjects)))
-            print(GROUP)
-            
-            for B in np.unique(GROUP['bin_index']): # subplot for each bin
-            
-                ax = fig.add_subplot(len(ylabels),np.max(GROUP['bin_index']),subplot_counter) # 1 subplot per bin window
-                subplot_counter += 1
-                ax.axhline(0, lw=1, alpha=1, color = 'k') # Add horizontal line at t=0
-                
-                MEANS = GROUP[GROUP['bin_index']==B] # get only current bin window
-                
-                # plot line graph
-                for x in[0,1]: # split by error, correct
-                    D = MEANS[MEANS['correct']==x]
-                    print(D)
-                    ax.errorbar(xind,np.array(D['mean']),yerr=np.array(D['sem']),fmt='-',elinewidth=1,label=labels[x],capsize=0, color=colors[x], alpha=1)
-                    ax.plot(xind,np.array(D['mean']),linestyle='-',label=labels[x],color=colors[x], alpha=1)
-
-                # set figure parameters
-                ax.set_title('{}'.format(pupil_dv))                
-                ax.set_ylabel(ylabels[dvi])
-                ax.set_xlabel(xlabel)
-                ax.set_xticks(xind)
-                ax.set_xticklabels(xticklabels)
-                ax.set_ylim(ylim[dvi])
-                ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(tick_spacer[dvi]))
-                ax.legend()
-        
-            sns.despine(offset=10, trim=True)
-            plt.tight_layout()
-        fig.savefig(os.path.join(self.figure_folder,'{}_BW{}_frequency*correct_lines.pdf'.format(self.exp, BW)))
-        print('success: plot_phasic_pupil_pe')
-    
-    def plot_tone_mapping_interaction_lines(self,BW):
-        # Phasic pupil target_locked, split by trial block (phases) then play_tone*mapping1
-        # GROUP LEVEL DATA
-        # separate lines for tone
-        # BW bin window
-        # interaction term = (m2_tone - m2_no_tone) - (m1_tone - m1_no_tone) # positive for phase1, negative for flipped
-        
-        dvs = ['correct','reaction_time','pupil_{}'.format('target_locked')]
-        ylabels = ['Accuracy (%)', 'RT (s)', 'Pupil response (% signal change)']
-        factor = ['bin_index','play_tone','mapping1']
-        
-        if BW < 100:
-            figsize = 10 
-        elif BW == 200:
-            figsize = 4
-        else:
-            figsize = 8
-        fig = plt.figure(figsize=(figsize,2*len(ylabels)))
-        subplot_counter = 1
-        
-        for dvi,pupil_dv in enumerate(dvs):
-
-            DFIN = pd.read_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone*mapping1_{}.csv'.format(self.exp,BW,pupil_dv)))
-            DFIN = DFIN.loc[:, ~DFIN.columns.str.contains('^Unnamed')] # drop all unnamed columns
-                        
-            # Group average per BIN WINDOW
-            GROUP = pd.DataFrame(DFIN.groupby(factor)[pupil_dv].agg(['mean','std']).reset_index())
-            GROUP['sem'] = np.true_divide(GROUP['std'],np.sqrt(len(self.subjects)))
-            print(GROUP)
-        
-            xticklabels = ['M1','M2'] # plot M1 first!
-            xind = np.arange(len(xticklabels))
-            bar_width = 0.35
-        
-            labels = ['No Tone','Tone']
-            colors = ['orange','orange']
-            alphas = [1, 1]
-            fmt = ['-', '--']
-                
-            for B in np.unique(GROUP['bin_index']): # subplot for each bin
-            
-                ax = fig.add_subplot(len(ylabels),np.max(GROUP['bin_index']),subplot_counter) # 1 subplot per bin window
-                subplot_counter += 1
-                ax.axhline(0, lw=1, alpha=1, color = 'k') # Add horizontal line at t=0
-                
-                #######################
-                # congruent*play_tone*correct
-                #######################                
-                MEANS = GROUP[GROUP['bin_index']==B] # get only current bin window
-                
-                if pupil_dv == 'correct': # percent correct instead of fraction / 1
-                    MEANS['mean'] = np.array(MEANS['mean'])*100
-                    MEANS['sem'] = np.array(MEANS['sem'])*100
-
-                # plot line graph
-                for x in [0,1]: # split by no_tone, tone
-                    D = MEANS[MEANS['play_tone']==x]
-                    # plot mapping1==1 first! flip D array
-                    ax.errorbar(xind,np.flip(D['mean']),yerr=np.flip(D['sem']),fmt=fmt[x],elinewidth=1,label=labels[x],capsize=0, color=colors[x], alpha=1)
-
-                # set figure parameters
-                ax.set_title('bin={}'.format(B))                
-                ax.set_ylabel(ylabels[dvi])
-                ax.set_xticks(xind)
-                ax.set_xticklabels(xticklabels)
-                if pupil_dv == 'reaction_time':
-                    ax.set_ylim([0.5,1.3])
-                elif pupil_dv == 'correct':
-                    ax.set_ylim([0,100])
-                else:
-                    ax.set_ylim([-2.5,3.5])
-                if B==1:
-                    ax.legend()
-            
-        # subplot grid 1 x bins
-        # yaxes in left-most plot only
-        if BW==25:
-            allaxes = fig.get_axes()
-            ###########
-            # first row
-            for ys in np.arange(2,17): 
-                allaxes[ys-1].get_xaxis().set_visible(False)
-                allaxes[ys-1].get_yaxis().set_visible(False)
-                allaxes[ys-1].spines['bottom'].set_visible(False)
-                allaxes[ys-1].spines['top'].set_visible(False)
-                allaxes[ys-1].spines['right'].set_visible(False)
-                allaxes[ys-1].spines['left'].set_visible(False)
-                
-            ###########
-            # second row
-            for ys in np.arange(18,33): # one extra hack
-                allaxes[ys-1].get_xaxis().set_visible(False)
-                allaxes[ys-1].get_yaxis().set_visible(False)
-                allaxes[ys-1].spines['bottom'].set_visible(False)
-                allaxes[ys-1].spines['top'].set_visible(False)
-                allaxes[ys-1].spines['right'].set_visible(False)
-                allaxes[ys-1].spines['left'].set_visible(False)
-                
-            ###########
-            # thrid row
-            for ys in np.arange(34,49): # one extra hack
-                allaxes[ys-1].get_yaxis().set_visible(False)
-                allaxes[ys-1].spines['top'].set_visible(False)
-                allaxes[ys-1].spines['right'].set_visible(False)
-                allaxes[ys-1].spines['left'].set_visible(False)
-    
-        # whole figure format
-        if BW==200:
-            sns.despine(offset=10, trim=True)
-            plt.tight_layout()
-        fig.savefig(os.path.join(self.figure_folder,'{}_BW{}_play_tone*mapping1_lines.pdf'.format(self.exp,BW)))
-        print('success: plot_tone_mapping_interaction_lines')
-
-    def pupil_behav_correlation(self,BW):
-        # Correlates the accuracy and pupil response across the trial bins, for each subject
-        # Take the difference of the M2 vs. M1, check tone trials only, because these change between the two phases
-        # transform rho coefficient through fischer Z-score
-        # plots one example participant, and then makes a raincloud plot of the rho coefficients at group level
-        
-        DFOUT = pd.DataFrame()
-        DFOUT['subject'] = self.subjects
-        
-        ### FIGURE - raincloud plot
-        fig = plt.figure(figsize=(4,4))
-        counter = 1
-        
-        for pupil_dv in ['pupil_target_locked','pupil_baseline_target_locked']:
-        
-            DFB = pd.read_csv(os.path.join(self.trial_bin_folder,'task-prediction_BW{}_play_tone*mapping1_correct.csv'.format(BW)))
-            DFP = pd.read_csv(os.path.join(self.trial_bin_folder,'task-prediction_BW{}_play_tone*mapping1_{}.csv'.format(BW,pupil_dv)))
-        
-            #### DROP NO-TONE TRIALS
-            DFB = DFB[DFB['play_tone']==1].copy()
-            DFP = DFP[DFP['play_tone']==1].copy() 
-        
-            save_corr = []
-            for s,subject in enumerate(self.subjects):
-                this_b = DFB[DFB['subject']==subject]
-                this_p = DFP[DFP['subject']==subject]
-                # behav
-                this_b = this_b.pivot(index='bin_index',columns='mapping1')['correct']# get 2 cols for each mapping condition
-                this_b.dropna(inplace=True) # drop NaNs for subtraction
-                x = this_b[0]-this_b[1] # take the difference of the M2 - M1 trials
-                # pupil
-                this_p = this_p.pivot(index='bin_index',columns='mapping1')[pupil_dv]# get 2 cols for each mapping condition
-                this_p.dropna(inplace=True) # drop NaNs for subtraction
-                y = this_p[0]-this_p[1] # take the difference of the M2 - M1 trials
-            
-                rho,pval = stats.spearmanr(x,y)
-                rho_z = self.fisher_transform(rho)
-                save_corr.append(rho_z) # normalize for statistical inference
-                
-                if s==0: # plot just random subject
-                    ax = fig.add_subplot(2,2,counter) 
-                    counter += 1
-                    # all subjects in grey
-                    ax.plot(x, y, 'o', markersize=6, color='orange', fillstyle='none') # marker, line, black
-                    m, b = np.polyfit(x, y, 1)
-                    ax.plot(x, m*x+b, color='black',alpha=.5, label='subject {} tone trials'.format(subject))
-                    ax.set_title('M2-M1 difference, rho={}, p-val={}'.format(np.round(rho,2),np.round(pval,3)))
-                    ax.set_ylabel('{}'.format(pupil_dv))
-                    ax.set_xlabel('Accuracy')
-                    ax.legend()
-
-            DFOUT['rho_z_{}'.format(pupil_dv)] = save_corr
-            DFOUT.to_csv(os.path.join(self.jasp_folder,'task-prediction_BW{}_play_tone*mapping1_correlation.csv'.format(BW)))
-            print('{} mean rho_z={}'.format(pupil_dv, np.mean(save_corr)))
-
-            # raincloud plot
-            orient = "h"
-            width_viol = .5
-            width_box = .1
-            bw = .2 # sigma
-            linewidth = 1
-            cut = 0.
-            scale = "area"
-            jitter = 1
-            move = .2
-            offset = None
-            point_size = 2
-            pointplot = True
-            alpha = 0.5
-            dodge = True
-            linecolor = 'grey'
-
-            # Plot the repeated measures data
-            df_rep = DFOUT
-
-            dx = None
-            dy = "rho_z_{}".format(pupil_dv) 
-            dhue = None
-            hue_order = None
-            palette = None
-
-            ax = fig.add_subplot(2,2,counter) 
-            counter += 1
-
-            ax=pt.RainCloud(x = dx, y = dy, hue = dhue, data = df_rep,
-                          order = None, hue_order = hue_order,
-                          orient = orient, width_viol = width_viol, width_box = width_box,
-                          palette = palette, bw = bw, linewidth = linewidth, cut = cut,
-                          scale = scale, jitter = jitter, move = move, offset = offset,
-                          point_size = point_size, ax = ax, pointplot = pointplot,
-                          alpha = alpha, dodge = dodge, linecolor = linecolor , color='grey')
-                      
-            ax.axvline(0, lw=1, alpha=1, color = 'k') # Add vertical line at t=0
-            ax.set_title('Group, {}'.format(pupil_dv))
-            
-        # whole figure format
-        sns.despine(offset=10, trim=True)
-        plt.tight_layout()
-        fig.savefig(os.path.join(self.figure_folder,'task-prediction_BW{}_play_tone*mapping1_correlation.pdf'.format(BW)))
-        print('success: pupil_behav_correlation')
-        
-        
     def psychometric_get_data(self, dv, phase1, play_tone, frequency, subject):
         # grabs the data for the condition of interest
         # dv = 'correct' for accuracy
@@ -1437,5 +1266,176 @@ class higherLevel(object):
             fig.savefig(os.path.join(self.figure_folder,'{}_psychometric_sigma_bars.pdf'.format(self.exp)))
         print('success: plot_psychometric_sigma')
         
+    def plot_pupil_behav_correlation(self,BW):
+        # Correlates the accuracy and pupil response across the trial bins, for each subject
+        # Take the difference of the M2 vs. M1, check tone trials only, because these change between the two phases
+        # transform rho coefficient through fischer Z-score
+        # plots one example participant, and then makes a raincloud plot of the rho coefficients at group level
+        
+        DFOUT = pd.DataFrame()
+        DFOUT['subject'] = self.subjects
+        
+        ### FIGURE - raincloud plot
+        fig = plt.figure(figsize=(4,4))
+        counter = 1
+        
+        for pupil_dv in ['pupil_target_locked','pupil_baseline_target_locked']:
+        
+            DFB = pd.read_csv(os.path.join(self.trial_bin_folder,'task-prediction_BW{}_play_tone*mapping1_correct.csv'.format(BW)))
+            DFP = pd.read_csv(os.path.join(self.trial_bin_folder,'task-prediction_BW{}_play_tone*mapping1_{}.csv'.format(BW,pupil_dv)))
+        
+            #### DROP NO-TONE TRIALS
+            DFB = DFB[DFB['play_tone']==1].copy()
+            DFP = DFP[DFP['play_tone']==1].copy() 
+        
+            save_corr = []
+            for s,subject in enumerate(self.subjects):
+                this_b = DFB[DFB['subject']==subject]
+                this_p = DFP[DFP['subject']==subject]
+                # behav
+                this_b = this_b.pivot(index='bin_index',columns='mapping1')['correct']# get 2 cols for each mapping condition
+                this_b.dropna(inplace=True) # drop NaNs for subtraction
+                x = this_b[0]-this_b[1] # take the difference of the M2 - M1 trials
+                # pupil
+                this_p = this_p.pivot(index='bin_index',columns='mapping1')[pupil_dv]# get 2 cols for each mapping condition
+                this_p.dropna(inplace=True) # drop NaNs for subtraction
+                y = this_p[0]-this_p[1] # take the difference of the M2 - M1 trials
+            
+                rho,pval = stats.spearmanr(x,y)
+                rho_z = self.fisher_transform(rho)
+                save_corr.append(rho_z) # normalize for statistical inference
+                
+                if s==0: # plot just random subject
+                    ax = fig.add_subplot(2,2,counter) 
+                    counter += 1
+                    # all subjects in grey
+                    ax.plot(x, y, 'o', markersize=6, color='orange', fillstyle='none') # marker, line, black
+                    m, b = np.polyfit(x, y, 1)
+                    ax.plot(x, m*x+b, color='black',alpha=.5, label='subject {} tone trials'.format(subject))
+                    ax.set_title('M2-M1 difference, rho={}, p-val={}'.format(np.round(rho,2),np.round(pval,3)))
+                    ax.set_ylabel('{}'.format(pupil_dv))
+                    ax.set_xlabel('Accuracy')
+                    ax.legend()
+
+            DFOUT['rho_z_{}'.format(pupil_dv)] = save_corr
+            DFOUT.to_csv(os.path.join(self.jasp_folder,'task-prediction_BW{}_play_tone*mapping1_correlation.csv'.format(BW)))
+            print('{} mean rho_z={}'.format(pupil_dv, np.mean(save_corr)))
+
+            # raincloud plot
+            orient = "h"
+            width_viol = .5
+            width_box = .1
+            bw = .2 # sigma
+            linewidth = 1
+            cut = 0.
+            scale = "area"
+            jitter = 1
+            move = .2
+            offset = None
+            point_size = 2
+            pointplot = True
+            alpha = 0.5
+            dodge = True
+            linecolor = 'grey'
+
+            # Plot the repeated measures data
+            df_rep = DFOUT
+
+            dx = None
+            dy = "rho_z_{}".format(pupil_dv) 
+            dhue = None
+            hue_order = None
+            palette = None
+
+            ax = fig.add_subplot(2,2,counter) 
+            counter += 1
+
+            ax=pt.RainCloud(x = dx, y = dy, hue = dhue, data = df_rep,
+                          order = None, hue_order = hue_order,
+                          orient = orient, width_viol = width_viol, width_box = width_box,
+                          palette = palette, bw = bw, linewidth = linewidth, cut = cut,
+                          scale = scale, jitter = jitter, move = move, offset = offset,
+                          point_size = point_size, ax = ax, pointplot = pointplot,
+                          alpha = alpha, dodge = dodge, linecolor = linecolor , color='grey')
+                      
+            ax.axvline(0, lw=1, alpha=1, color = 'k') # Add vertical line at t=0
+            ax.set_title('Group, {}'.format(pupil_dv))
+            
+        # whole figure format
+        sns.despine(offset=10, trim=True)
+        plt.tight_layout()
+        fig.savefig(os.path.join(self.figure_folder,'task-prediction_BW{}_play_tone*mapping1_correlation.pdf'.format(BW)))
+        print('success: pupil_behav_correlation')
+    
+    def plot_phasic_pupil_accuracy(self, BW):
+        # Phasic pupil target_locked interaction frequency and accuracy
+        # GROUP LEVEL DATA
+        # separate lines for correct, x-axis is frequency conditions
+        
+        ylim = [ 
+            [-1.5,1.5], # t1
+        ]
+        tick_spacer = [0.5]
+        
+        dvs = ['pupil_target_locked']
+        ylabels = ['Pupil response\n(% signal change)']
+        factor = ['bin_index','frequency','correct']
+        xlabel = 'Cue-target frequency'
+        xticklabels = ['20%','80%'] 
+        labels = ['Error','Correct']
+        colors = ['red','blue'] 
+        
+        xind = np.arange(len(xticklabels))
+        dot_offset = [0.1,-0.1]
+        
+        if BW < 100:
+            figsize = 10 
+        elif BW == 200:
+            figsize = 4
+        else:
+            figsize = 8
+        fig = plt.figure(figsize=(figsize,2*len(ylabels)))
+        
+        subplot_counter = 1
+        
+        for dvi,pupil_dv in enumerate(dvs):
+
+            DFIN = pd.read_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_frequency*correct_{}.csv'.format(self.exp,BW,pupil_dv)))
+            DFIN = DFIN.loc[:, ~DFIN.columns.str.contains('^Unnamed')] # drop all unnamed columns
+            
+            # Group average per BIN WINDOW
+            GROUP = pd.DataFrame(DFIN.groupby(factor)[pupil_dv].agg(['mean','std']).reset_index())
+            GROUP['sem'] = np.true_divide(GROUP['std'],np.sqrt(len(self.subjects)))
+            print(GROUP)
+            
+            for B in np.unique(GROUP['bin_index']): # subplot for each bin
+            
+                ax = fig.add_subplot(len(ylabels),np.max(GROUP['bin_index']),subplot_counter) # 1 subplot per bin window
+                subplot_counter += 1
+                ax.axhline(0, lw=1, alpha=1, color = 'k') # Add horizontal line at t=0
+                
+                MEANS = GROUP[GROUP['bin_index']==B] # get only current bin window
+                
+                # plot line graph
+                for x in[0,1]: # split by error, correct
+                    D = MEANS[MEANS['correct']==x]
+                    print(D)
+                    ax.errorbar(xind,np.array(D['mean']),yerr=np.array(D['sem']),fmt='-',elinewidth=1,label=labels[x],capsize=0, color=colors[x], alpha=1)
+                    ax.plot(xind,np.array(D['mean']),linestyle='-',label=labels[x],color=colors[x], alpha=1)
+
+                # set figure parameters
+                ax.set_title('{}'.format(pupil_dv))                
+                ax.set_ylabel(ylabels[dvi])
+                ax.set_xlabel(xlabel)
+                ax.set_xticks(xind)
+                ax.set_xticklabels(xticklabels)
+                ax.set_ylim(ylim[dvi])
+                ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(tick_spacer[dvi]))
+                ax.legend()
+        
+            sns.despine(offset=10, trim=True)
+            plt.tight_layout()
+        fig.savefig(os.path.join(self.figure_folder,'{}_BW{}_frequency*correct_lines.pdf'.format(self.exp, BW)))
+        print('success: plot_phasic_pupil_pe')        
 
         

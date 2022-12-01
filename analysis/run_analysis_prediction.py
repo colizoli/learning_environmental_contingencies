@@ -129,32 +129,33 @@ if higher_level:
     higherLevel.create_subjects_dataframe()      # combines all subjects' behavioral files: task-predictions_subjects.csv, flags RT outliers
     ''' Note: the functions after this are using: task-predictions_subjects.csv
     '''
-    higherLevel.dataframe_evoked_pupil_higher()  # per event of interest, outputs one dataframe or np.array? for all trials for all subject on pupil time series
-    higherLevel.plot_evoked_pupil()              # (Fig2) plots evoked pupil per event of interest, group level, main effects + interaction
-
     ''' DV averages in trial bin windows
     '''
-    for BW in [1,25,200,400]: # Bin window = number of trials per bin; BW=200 is phase1 vs. phase2
-        higherLevel.average_conditions(BW)                    # averages the phasic pupil, RT per condition in each bin
+    for BW in [1,25,200]: # Bin window = number of trials per bin; BW=200 is phase1 vs. phase2 (BW=1 is single trial)
+        higherLevel.average_conditions(BW)       # averages the dependent variables per condition per bin
     
-    ''' Plot averages within bin windows
+    ''' Plot averages within phase 1 and phase 2 (Fig2)
     '''
-    for BW in [25,200]: # Bin window = number of trials per bin; BW=200 is phase1 vs. phase2
+    for BW in [200]: # Bin window = number of trials per bin; BW=200 is phase1 vs. phase2
         higherLevel.plot_tone_mapping_interaction_lines(BW)  # (Fig2) plots the tone x mapping effects in each bin (line plots)
-        higherLevel.plot_phasic_pupil_pe(BW)    # plot the interaction between frequency and accuracy
-    
-    ''' Correlation pupil to behavior
-    '''
-    higherLevel.pupil_behav_correlation(BW=25)   # compares the pupil response to the behavior for the tone trials only
-    
-    ''' Psychometric function fitting
-    '''
-    higherLevel.psychometric_accuracy()       # psychometric function on accuracy, tone vs. no tone trials per phase
-    higherLevel.psychometric_pupil()          # psychometric function on accuracy, tone vs. no tone trials per phase
-    higherLevel.housekeeping_rmanova()          # restacks the dataframes for the rm-anova format
-    higherLevel.plot_psychometric_sigma()     # plots beta parameters accuracy and pupil dataframes
-    
 
+    ''' Pupil time courses (Fig3)
+    '''
+    higherLevel.dataframe_evoked_pupil_higher()  # per event of interest, outputs one dataframe or np.array? for all trials for all subject on pupil time series
+    higherLevel.plot_evoked_pupil()              # (Fig3) plots evoked pupil per event of interest, group level, main effects + interaction
     
+    ''' Psychometric function fitting (Fig4, SuppFig4, SuppFig5)
+    '''
+    higherLevel.psychometric_accuracy()       # (SuppFig4) psychometric function on accuracy, tone vs. no tone trials per phase
+    higherLevel.psychometric_pupil()          # (SuppFig5) psychometric function on accuracy, tone vs. no tone trials per phase
+    higherLevel.housekeeping_rmanova()        # restacks the dataframes for the rm-anova format
+    higherLevel.plot_psychometric_sigma()     # (Fig4) plots beta parameters accuracy and pupil dataframes
+    
+    ''' Supplementary Analyses
+    '''
+    ## Note BW is bin window = number of trials per bin; BW=200 is phase1 vs. phase2
+    higherLevel.plot_tone_mapping_interaction_lines(BW=25)  # (SuppFig1) plots the tone x mapping effects in each bin (line plots)
+    higherLevel.plot_pupil_behav_correlation(BW=25)         # (SuppFig2) correlates the pupil response with the behavioral accuracy for the tone trials only, across bins
+    higherLevel.plot_phasic_pupil_accuracy(BW=200)          # (SuppFig3) plot the interaction between frequency, accuracy, and phase
     
     
