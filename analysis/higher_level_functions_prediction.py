@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 # encoding: utf-8
 """
-Learning novel environmental contingencies 
+================================================
+Differentiating between Bayesian parameter learning and structure learning based on behavioural and pupil measures
+
 Higher Level Functions
-Python code O.Colizoli 2021
+Python code O.Colizoli 2021 (olympia.colizoli@donders.ru.nl)
 Python 3.6
+================================================
 """
 
 import os, sys, datetime

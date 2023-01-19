@@ -1,3 +1,16 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+================================================
+Used in: Differentiating between Bayesian parameter learning and structure learning based on behavioural and pupil measures
+
+General Linear Model Functions
+Python code c/o JW de Gee (https://github.com/jwdegee)
+Python 3.6
+================================================
+"""
+
 from __future__ import division
 
 import numpy as np

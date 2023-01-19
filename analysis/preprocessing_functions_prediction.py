@@ -2,9 +2,10 @@
 # encoding: utf-8
 """
 ================================================
-Learning novel environmental contingencies 
-Pre-processing pupillometry
-Python code O.Colizoli 2021
+Differentiating between Bayesian parameter learning and structure learning based on behavioural and pupil measures
+
+Pre-processing Pupillometry
+Python code O.Colizoli 2021 (olympia.colizoli@donders.ru.nl)
 Python 3.6
 ================================================
 """
