@@ -6,6 +6,6 @@ Authors: Danaja Rutar, Olympia Colizoli*, Luc Selen, Lukas Spieß, Johan Kwistho
 
 *coded this repository (shared 1st authorship)
 
-All analyses are run from "analysis/RUN_ANALYSIS_prediction.py".
+All analyses are run from "analysis/run_analysis_prediction.py".
 You can isolate the preprocessing, trial-level, and higher-level analyses individually by setting the levels on/off.
 To run the higher-level functions alone, the processed datafile is given for convenience "derivatives/data_frames/task-prediction_subjects.csv".
