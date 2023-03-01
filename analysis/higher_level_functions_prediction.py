@@ -3,37 +3,44 @@
 """
 ================================================
 Differentiating between Bayesian parameter learning and structure learning based on behavioural and pupil measures
-
+PLOS ONE 2023 https://doi.org/10.1371/journal.pone.0270619
 Higher Level Functions
 Python code O.Colizoli 2021 (olympia.colizoli@donders.ru.nl)
 Python 3.6
 ================================================
 """
 
-import os, sys, datetime
+import os
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import mne
-import re
-import copy
 import scipy as sp
 import scipy.stats as stats
-from scipy.signal import decimate
 import scipy.optimize as optim
-from scipy.optimize import curve_fit
-import scipy.interpolate as interpolate
-import statsmodels.api as sm
 import ptitprince as pt #raincloud plots
 
 #conda install -c conda-forge/label/gcc7 mne
 from copy import deepcopy
-import itertools
 
-from IPython import embed as shell # used for debugging
+# from IPython import embed as shell # used for debugging
 
+""" Plotting Format
+############################################
+# PLOT SIZES: (cols,rows)
+# a single plot, 1 row, 1 col (2,2)
+# 1 row, 2 cols (2*2,2*1)
+# 2 rows, 2 cols (2*2,2*2)
+# 2 rows, 3 cols (2*3,2*2)
+# 1 row, 4 cols (2*4,2*1)
+# Nsubjects rows, 2 cols (2*2,Nsubjects*2)
+
+############################################
+# Define parameters
+############################################
+"""
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 sns.set(style='ticks', font='Arial', font_scale=1, rc={
@@ -51,21 +58,68 @@ sns.set(style='ticks', font='Arial', font_scale=1, rc={
     'ytick.color':'Black',} )
 sns.plotting_context()
 
-############################################
-# PLOT SIZES: (cols,rows)
-# a single plot, 1 row, 1 col (2,2)
-# 1 row, 2 cols (2*2,2*1)
-# 2 rows, 2 cols (2*2,2*2)
-# 2 rows, 3 cols (2*3,2*2)
-# 1 row, 4 cols (2*4,2*1)
-# Nsubjects rows, 2 cols (2*2,Nsubjects*2)
-
-############################################
-# Define parameters
-############################################
-
 class higherLevel(object):
+    """Define a class for the higher level analysis.
+
+    Parameters
+    ----------
+    subjects : list
+        List of subject numbers
+    group : int or boolean
+        Indicating group 0 (flipped) or 1 (normal order) for the counterbalancing of the mapping conditions
+    experiment_name : string
+        Name of the experiment for output files
+    source_directory : string 
+        Path to the raw data directory
+    project_directory : str
+        Path to the derivatives data directory
+    sample_rate : int
+        Sampling rate of pupil measurements in Hertz
+    time_locked : list
+        List of strings indiciting the events for time locking that should be analyzed (e.g., ['cue_locked','target_locked'])
+    pupil_step_lim : list 
+        List of arrays indicating the size of pupil trial kernels in seconds with respect to first event, first element should max = 0! (e.g., [[-baseline_window,3],[-baseline_window,3]] )
+    baseline_window : float
+        Number of seconds before each event in self.time_locked that are averaged for baseline correction
+    pupil_time_of_interest : list
+        List of arrays indicating the time windows in seconds in which to average evoked responses, per event in self.time_locked, see in higher.plot_evoked_pupil (e.g., [[1.0,2.0],[1.0,2.0]])
+    
+    Attributes
+    ----------
+    subjects : list
+        List of subject numbers
+    group : int or boolean
+        Indicating group 0 (flipped) or 1 (normal order) for the counterbalancing of the mapping conditions
+    experiment_name : string
+        Name of the experiment for output files
+    source_directory : string 
+        Path to the raw data directory
+    project_directory : str
+        Path to the derivatives data directory
+    figure_folder : str
+        Path to the figure directory
+    dataframe_folder : str
+        Path to the dataframe directory
+    sample_rate : int
+        Sampling rate of pupil measurements in Hertz
+    time_locked : list
+        List of strings indiciting the events for time locking that should be analyzed (e.g., ['cue_locked','target_locked'])
+    pupil_step_lim : list 
+        List of arrays indicating the size of pupil trial kernels in seconds with respect to first event, first element should max = 0! (e.g., [[-baseline_window,3],[-baseline_window,3]] )
+    baseline_window : float
+        Number of seconds before each event in self.time_locked that are averaged for baseline correction
+    pupil_time_of_interest : list
+        List of arrays indicating the time windows in seconds in which to average evoked responses, per event in self.time_locked, see in higher.plot_evoked_pupil (e.g., [[1.0,2.0],[1.0,2.0]])
+    trial_bin_folder : str
+        Path to the output directory for the data averaged across trial bins of different size
+    jasp_folder : str
+        Path to the JASP data frame directory
+
+    """
+    
     def __init__(self, subjects, group, experiment_name, source_directory, project_directory, sample_rate, time_locked, pupil_step_lim, baseline_window, pupil_time_of_interest):        
+        """Constructor method
+        """
         self.subjects = subjects
         self.group = group
         self.exp = experiment_name
@@ -78,7 +132,6 @@ class higherLevel(object):
         self.pupil_step_lim = pupil_step_lim                
         self.baseline_window = baseline_window              
         self.pupil_time_of_interest = pupil_time_of_interest
-        self.prediction_folder = os.path.join(self.dataframe_folder,'predictions') # for model predictions
         self.trial_bin_folder = os.path.join(self.dataframe_folder,'trial_bins_pupil') # for average pupil in different trial bin windows
         self.jasp_folder = os.path.join(self.dataframe_folder,'jasp') # for dataframes to input into JASP
         
@@ -87,24 +140,33 @@ class higherLevel(object):
             
         if not os.path.isdir(self.dataframe_folder):
             os.mkdir(self.dataframe_folder)
-            
-        if not os.path.isdir(self.prediction_folder):
-            os.mkdir(self.prediction_folder)
         
         if not os.path.isdir(self.trial_bin_folder):
             os.mkdir(self.trial_bin_folder)
             
         if not os.path.isdir(self.jasp_folder):
             os.mkdir(self.jasp_folder)
-            
-        ##############################    
-        # Pupil time series information:
-        ##############################
-        self.downsample_rate = 20 # 20 Hz
-        self.downsample_factor = self.sample_rate / self.downsample_rate 
     
-    # this is the equivalent with a cumulative Gaussian
     def sigmoid_fit_accuracy(self, parameters, x_data, response_data):
+        """Fit the accuracy data with a sigmoid, equivalent to a cumulative Guassian.
+        
+        Parameters
+        ----------
+        parameters : list
+            A list of parameters to minimize such as [mu, sigma, p0]
+        
+        x_data : array
+            The x-values of the function
+        
+        y_data : array
+            The y-values of the function, need to be the same length as x_data
+
+        Returns
+        -------
+        neglogL : float
+            Negative log likelihood.
+        """
+        
         mu, sigma, p0 = parameters
         p = p0+(1-p0)*stats.norm.cdf(x_data, loc=mu, scale=sigma)
         L = p*response_data + (1-p)*(1-response_data)
@@ -115,6 +177,25 @@ class higherLevel(object):
         return neglogL
     
     def sigmoid_fit_pupil(self, parameters, x_data, response_data):
+        """Fit the pupil data with a sigmoid, equivalent to a cumulative Guassian
+        
+        Parameters
+        ----------
+        parameters : list
+            A list of parameters to minimize such as [mu, sigma, B, G]
+        
+        x_data : array
+            The x-values of the function
+        
+        y_data : array
+            The y-values of the function, need to be the same length as x_data
+
+        Returns
+        -------
+        cost : float
+            cost function sum of squared error.
+        """
+        
         mu, sigma, B, G = parameters
         # b + gain * norm.cdf
         S = B+G*stats.norm.cdf(x_data, loc=mu, scale=sigma)
@@ -123,7 +204,23 @@ class higherLevel(object):
         return cost
         
     def tsplot(self, ax, data, alpha_line=1, **kw):
-        # replacing seaborn tsplot
+        """Time series plot replacing seaborn tsplot
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes._subplots.AxesSubplot
+            The subplot handle to plot in
+        
+        data : array
+            The data in matrix of format: subject x timepoints
+        
+        alpha_line : int
+            The thickness of the mean line (default 1)
+        
+        kw : list
+            Optional keyword arguments for matplotlib.plot().
+        """
+
         x = np.arange(data.shape[1])
         est = np.mean(data, axis=0)
         sd = np.std(data, axis=0)
@@ -133,7 +230,25 @@ class higherLevel(object):
         ax.margins(x=0)
     
     def bootstrap(self, data, n_boot=10000, ci=68):
-        # bootstrap confidence interval for new tsplot
+        """Bootstrap confidence interval for new tsplot.
+        
+        Parameters
+        ----------
+        data : array
+            The data in matrix of format: subject x timepoints
+        
+        n_boot : int
+            Number of iterations for bootstrapping
+        
+        ci : int
+            Confidence interval range
+        
+        Returns
+        -------
+        (s1,s2) : tuple
+            Confidence interval.
+        """
+        
         boot_dist = []
         for i in range(int(n_boot)):
             resampler = np.random.randint(0, data.shape[0], data.shape[0])
@@ -144,9 +259,36 @@ class higherLevel(object):
         s2 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50.+ci/2.)
         return (s1,s2)
         
-    # common functions
-    def cluster_sig_bar_1samp(self,array, x, yloc, color, ax, threshold=0.05, nrand=5000, cluster_correct=True):
-        # permutation-based cluster correction on time courses, then plots the stats as a bar in yloc
+    def cluster_sig_bar_1samp(self, array, x, yloc, color, ax, threshold=0.05, nrand=5000, cluster_correct=True):
+        """Add permutation-based cluster-correction bar on time series plot.
+        
+        Parameters
+        ----------
+        array : array
+            The data in matrix of format: subject x timepoints
+        
+        x : array
+            x-axis of plot
+        
+        yloc : int
+            Location on y-axis to draw bar
+        
+        color : string
+            Color of bar
+        
+        ax : matplotlib.axes._subplots.AxesSubplot
+            The subplot handle to plot in
+        
+        threshold : float
+            Alpha value for p-value significance (default 0.05)
+        
+        nrand : int 
+            Number of permutations (default 5000)
+        
+        cluster_correct : bool 
+            Perform cluster-based multiple comparison correction if True (default True).
+        """
+        
         if yloc == 1:
             yloc = 10
         if yloc == 2:
@@ -186,24 +328,40 @@ class higherLevel(object):
                 ax.hlines(((ax.get_ylim()[1] - ax.get_ylim()[0]) / yloc)+ax.get_ylim()[0], x[int(sig[0])]-(np.diff(x)[0] / 2.0), x[int(sig[1])]+(np.diff(x)[0] / 2.0), color=color, alpha=1, linewidth=2.5)
     
     def fisher_transform(self,r):
-        # for statistical testing on correlation coefficients
+        """Compute Fisher transform on correlation coefficient.
+        
+        Parameters
+        ----------
+        r : array_like
+            The coefficients to normalize
+        
+        Returns
+        -------
+        0.5*np.log((1+r)/(1-r)) : ndarray
+            Array of shape r with normalized coefficients.
+        """
+        
         return 0.5*np.log((1+r)/(1-r))
     
     def higherlevel_log_conditions(self,):
-        # for each LOG file for each subject, computes mappings, accuracy, RT outliers (3 STD group level)
-        # note it was not possible to miss a trial
-
-        #############
-        # ACCURACY COMPUTATIONS
-        #############
-        # cue 'cue_ori': 0 = square, 45 = diamond
-        # tone 'play_tone': TRUE or FALSE
-        # target 'target_ori': 45 degrees  = right orientation, 315 degrees = left orientation
-        # counterbalancing: 'normal'
+        """Compute mappings, accuracy, and RT outliers (3 STD group level). 
         
-        # normal congruency phase 1: combinations of cue, tone and target:
-        # mapping_normal = ['0_True_45','0_False_45','45_True_315','45_False_315']
-        # mapping_counter = ['0_True_315','0_False_315','45_True_45','45_False_45']
+        Notes
+        -----
+        Operates on each LOG file for each subject. 
+        Overwrites original log file (this_log).
+        Note that it was not possible to miss a trial.
+
+        ACCURACY COMPUTATIONS
+        cue 'cue_ori': 0 = square, 45 = diamond
+        tone 'play_tone': TRUE or FALSE
+        target 'target_ori': 45 degrees  = right orientation, 315 degrees = left orientation
+        counterbalancing: 'normal'
+        normal congruency phase 1: combinations of cue, tone and target:
+        mapping_normal = ['0_True_45','0_False_45','45_True_315','45_False_315']
+        mapping_counter = ['0_True_315','0_False_315','45_True_45','45_False_45']
+        .
+        """
         
         # models congruency flips after 200 trials: trials 1-200 phase1, trials 201-400 phase2
         phase1 = np.arange(1,201) # excluding 201
@@ -281,10 +439,12 @@ class higherLevel(object):
         print('success: higherlevel_log_conditions')
        
     def higherlevel_get_phasics(self,):
-        # computes phasic pupil in selected time window per trial
-        # adds phasics to behavioral data frame
-        # loop through subjects' log files
+        """Computes phasic pupil (evoked average) in selected time window per trial and add phasics to behavioral data frame. 
         
+        Notes
+        -----
+        Overwrites original log file (this_log).
+        """
         for s,subj in enumerate(self.subjects):
             this_log = os.path.join(self.project_directory,subj,'beh','{}_{}_beh.csv'.format(subj,self.exp)) # derivatives folder
             B = pd.read_csv(this_log) # behavioral file
@@ -320,8 +480,12 @@ class higherLevel(object):
         print('success: higherlevel_get_phasics')
         
     def higherlevel_add_baselines(self,):
-        # add a column for the pupil baselines for each event in the subjects' log files
+        """Add a column for the pupil baselines for each event in the subjects' log files. 
         
+        Notes
+        -----
+        Overwrites original log file (this_log).
+        """
         for s,subj in enumerate(self.subjects):
             this_log = os.path.join(self.project_directory,subj,'beh','{}_{}_beh.csv'.format(subj,self.exp)) # derivatives folder
             B = pd.read_csv(this_log) # behavioral file
@@ -342,10 +506,13 @@ class higherLevel(object):
         print('success: higherlevel_add_baselines')
         
     def create_subjects_dataframe(self,):
-        # combine behavior + phasic pupil dataframes ALL SUBJECTS
-        # flags outliers based on RT (separate column) per subject
-        # output in dataframe folder: task-predictions_subjects.csv
-                
+        """Combine behavior and phasic pupil dataframes of all subjects into a single large dataframe. 
+        
+        Notes
+        -----
+        Flag outliers based on RT (separate column) per subject. 
+        Output in dataframe folder: task-predictions_subjects.csv
+        """     
         DF = pd.DataFrame() # ALL SUBJECTS phasic pupil + behavior 
         
         # loop through subjects, get behavioral log files
@@ -381,10 +548,18 @@ class higherLevel(object):
 
 
     def average_conditions(self,BW):
-        # averages the phasic pupil per subject PER CONDITION 
-        # averaging in bin window BW
-        # saves separate dataframes for the different combinations of factors
+        """Average the phasic pupil per subject per condition of interest. 
         
+        Parameters
+        ----------
+        BW : int
+            The bin width in trials for averaging.
+        
+        Notes
+        -----
+        Average in bin window `BW`. 
+        Save separate dataframes for the different combinations of factors in trial bin folder for plotting and jasp folders for statistical testing.
+        """
         dvs = ['pupil_{}'.format('target_locked'),'reaction_time','correct','pupil_baseline_{}'.format('target_locked')]
 
         for pupil_dv in dvs:
@@ -413,9 +588,7 @@ class higherLevel(object):
                 DF = DF[DF['outlier_rt']==0]
                 ############################
                 
-                '''
                 ######## PUPIL DV ########
-                '''
                 # MEANS subject x correct (for psychometric function)
                 DFOUT = DF.groupby(['subject','bin_index'])[pupil_dv].mean()
                 DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_{}.csv'.format(self.exp,BW,pupil_dv))) # for psychometric curve fitting
@@ -423,9 +596,7 @@ class higherLevel(object):
                 DFOUT = DF.groupby(['subject','bin_index','play_tone'])[pupil_dv].mean()
                 DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone_{}.csv'.format(self.exp,BW,pupil_dv))) # for psychometric curve fitting
                                 
-                '''
                 ######## TONE x MAPPING ########
-                '''
                 # MEANS subject x bin x tone x congruent
                 DFOUT = DF.groupby(['subject','bin_index','play_tone','mapping1'])[pupil_dv].mean()
                 DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone*mapping1_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
@@ -435,9 +606,7 @@ class higherLevel(object):
                 DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
                 DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*mapping1_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
                 
-                '''
                 ######## TONE x FREQUENCY ########
-                '''
                 # MEANS subject x bin x tone x frequency
                 DFOUT = DF.groupby(['subject','bin_index','play_tone','frequency'])[pupil_dv].mean()
                 DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_play_tone*frequency_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
@@ -447,9 +616,7 @@ class higherLevel(object):
                 DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
                 DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*frequency_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
                 
-                '''
                 ######## TONE x CORRECT ########
-                '''
                 if not pupil_dv == 'correct':
                     # MEANS subject x bin x tone x congruent
                     DFOUT = DF.groupby(['subject','bin_index','play_tone','correct'])[pupil_dv].mean()
@@ -462,36 +629,39 @@ class higherLevel(object):
             
                 # Accuracy as factor of interest
                 if not pupil_dv == 'correct':
-                    '''
                     ######## PHASE x TONE x MAPPING x ACCURACY ########
-                    '''
                     DFOUT = DF.groupby(['subject','bin_index','play_tone','mapping1','correct'])[pupil_dv].mean()
                     # save for RMANOVA format
                     DFANOVA = DFOUT.unstack(['mapping1','play_tone','correct','bin_index']) # put all conditions into columns
                     DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
                     DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_play_tone*mapping1*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
-                    '''
+                    
                     ######## FREQUENCY x ACCURACY ########
-                    '''
                     DFOUT = DF.groupby(['subject','bin_index','frequency','correct'])[pupil_dv].mean()
                     DFOUT.to_csv(os.path.join(self.trial_bin_folder,'{}_BW{}_frequency*correct_{}.csv'.format(self.exp,BW,pupil_dv))) # FOR PLOTTING
                     
                     # save for RMANOVA format
                     DFANOVA = DFOUT.unstack(['correct','frequency','bin_index']) # put all conditions into columns
                     DFANOVA.columns = DFANOVA.columns.to_flat_index() # flatten column index
-                    DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_frequency*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats
-                        
+                    DFANOVA.to_csv(os.path.join(self.jasp_folder,'{}_BW{}_frequency*correct_{}_rmanova.csv'.format(self.exp,BW,pupil_dv))) # for stats 
             else:
                 print('Error! Bin windows are not divisors of trial length')
         print('success: average_conditions')
     
     def plot_tone_mapping_interaction_lines(self,BW):
-        # Phasic pupil target_locked, split by trial block (phases) then play_tone*mapping1
-        # GROUP LEVEL DATA
-        # separate lines for tone
-        # BW bin window
-        # interaction term = (m2_tone - m2_no_tone) - (m1_tone - m1_no_tone) # positive for phase1, negative for flipped
+        """Plot the group level data of the dependent variables.
         
+        Parameters
+        ----------
+        BW : int
+            The bin width in trials for averaging.
+        
+        Notes
+        -----
+        Split by trial block (phases) then play_tone*mapping1. 1 figure, 3 * BW subplots.
+        Rows: accuracy, reaction time, target-locked phasic pupil dilation. Columns: trial bins (BW).
+        Separate lines for tone factor. Figure output in figure folder.    
+        """
         dvs = ['correct','reaction_time','pupil_{}'.format('target_locked')]
         ylabels = ['Accuracy (%)', 'RT (s)', 'Pupil response (% signal change)']
         factor = ['bin_index','play_tone','mapping1']
@@ -531,7 +701,7 @@ class higherLevel(object):
                 ax.axhline(0, lw=1, alpha=1, color = 'k') # Add horizontal line at t=0
                 
                 #######################
-                # congruent*play_tone*correct
+                # mapping1*play_tone
                 #######################                
                 MEANS = GROUP[GROUP['bin_index']==B] # get only current bin window
                 
@@ -600,10 +770,15 @@ class higherLevel(object):
         
         
     def dataframe_evoked_pupil_higher(self):
-        # Evoked pupil responses, split by self.factors and save as higher level dataframe
-        # Need to combine evoked files with behavioral data frame, looping through subjects
-        # DROP OMISSIONS (in subject loop)
+        """Compute evoked pupil responses.
         
+        Notes
+        -----
+        Split by conditions of interest. Save as higher level dataframe per condition of interest. 
+        Evoked dataframes need to be combined with behavioral data frame, looping through subjects. 
+        Drop omission trials (in subject loop).
+        Output in dataframe folder.
+        """
         DF = pd.read_csv(os.path.join(self.dataframe_folder,'{}_subjects.csv'.format(self.exp)))
         DF = DF.loc[:, ~DF.columns.str.contains('^Unnamed')] # remove all unnamed columns   
         csv_names = deepcopy(['subject','correct','play_tone'])
@@ -641,13 +816,15 @@ class higherLevel(object):
         print('success: dataframe_evoked_pupil_higher')
     
     def plot_evoked_pupil(self):
-        # plots evoked pupil (data quality check), 1 figure, 4 subplots
-        # plots the group level mean for cue_locked
-        # plots the group level accuracy for target_locked (error vs. correct)
-        # plots the group level tone effect for cue_locked and feed_locked
-
-        # ylim_cue = [0,3]
-        # ylim_feed = [-1.5,1]
+        """Plot evoked pupil time courses.
+        
+        Notes
+        -----
+        1 figure, 4 subplots. Left column: cue-locked; right column: target-locked.
+        Plot the group level mean for cue_locked.
+        Plot the group level accuracy effect for target_locked (error vs. correct)
+        Plot the group level tone vs. no tone effect for cue_locked and then feed_locked.
+        """
         ylim_cue = [-1.5,3.2]
         ylim_feed = ylim_cue
         
@@ -852,9 +1029,28 @@ class higherLevel(object):
         print('success: plot_evoked_pupil')
     
     def psychometric_get_data(self, dv, phase1, play_tone, frequency, subject):
-        # grabs the data for the condition of interest
-        # dv = 'correct' for accuracy
+        """Grab the appropriate data for the psychometric fits and plots.
         
+        Parameters
+        ----------
+        dv : string
+            The dependent variable. 'correct' for accuracy.
+        phase1 : boolean
+            True for phase 1, False for phase 2 trials.
+        play_tone : boolean
+            True for tone trials, False for trials without a tone.
+        frequency : int
+            The frequency condition (20, 80, or 100)
+        subject : string
+            Subject number
+        
+        Returns
+        -------
+        x : numpy.array
+            X-axis array is trial numbers
+        y : numpy.array
+            Y-axis array is data for factor of interest.
+        """
         # load dataframe (single trials, bin width of 1, BW=1)
         DF = pd.read_csv(os.path.join(self.trial_bin_folder,'{}_BW1_play_tone*{}_{}.csv'.format(self.exp,'frequency',dv)))
         
@@ -881,9 +1077,8 @@ class higherLevel(object):
             C = P[P['frequency']==frequency].copy()
             # Drop bins with missing values
             P.dropna(inplace=True)
-        else:
+        else: # all trials
             C = P
-            # frequency = 100
         
         # data to fit                        
         x = np.array(C['bin_index'])   # x-axis are trial numbers
@@ -891,11 +1086,30 @@ class higherLevel(object):
         return x,y
     
     def psychometric_minimum_accuracy(self, x,y, phase1, DFOUT):
-        # loop through initial values for parameters, save cost to make sure not stuck in local minimums
-        # mu, sigma, p0 are the sigmoid inputs
+        """Find minimum cost function of psychometric fit to accuracy data.
         
+        Parameters
+        ----------
+        x : numpy.array
+            X-axis array is trial numbers
+        y : numpy.array
+            Y-axis array is data for factor of interest
+        phase1 : boolean
+            True for phase 1, False for phase 2 trials.
+        DFOUT : pandas dataframe
+            The output dataframe
+        
+        Returns
+        -------
+        min_params : list
+            The parameters given the minimum cost function.
+        
+        Notes
+        -------
+        Loop through initial values for parameters, save cost to make sure not stuck in local minimums
+        mu, sigma, p0 are the sigmoid inputs.
+        """
         # INITIAL GUESSES FOR MODEL FIT
-        # ----------------------------
         if phase1==1:
             init_mu = [50,100,150]
         else:
@@ -931,8 +1145,31 @@ class higherLevel(object):
         return min_params[np.argmin(min_cost)]
     
     def psychometric_subplot_accuracy(self, fig, phase1, play_tone, frequency, s, params, x,y):
-        # for each subject, plot the data and the curve fits with minimum parameters
+        """Plot the accuracy data and the curve fits with minimum parameters in the current subject's subplot. 
         
+        Parameters
+        ----------
+        fig : matplotlib handle
+            Figure handle
+        phase1 : boolean
+            True for phase 1, False for phase 2 trials.
+        play_tone : boolean
+            True for tone trials, False for trials without a tone.
+        frequency : int
+            The frequency condition (20 or 80)
+        s : int
+            Subplot counter (subject)
+        params : list
+            List of parameters for psychometric function (mu, sigma, p0)
+        x : numpy.array
+            X-axis array is trial numbers
+        y : numpy.array
+            Y-axis array is data for factor of interest
+
+        Notes
+        -------
+        Figure as PDF in figure folder.
+        """
         mu    = params[0]
         sigma = params[1]
         p0    = params[2]
@@ -985,9 +1222,14 @@ class higherLevel(object):
         print('success: psychometric_subplot_accuracy')
         
     def psychometric_accuracy(self,):
-        # Cummulative Gaussian fit - all trials
-        # ACCURACY DATA (0,1)
+        """Call the curve fit routine for the accuracy data.
         
+        Notes
+        -------
+        Cummulative Gaussian fit - all trials
+        ACCURACY DATA (0,1)
+        Figure with all subjects' curve fits output in figure folder.
+        """
         # MODEL FIT CONDITIONS
         # ----------------------------
         dv = 'correct'  # accuracy
@@ -1036,9 +1278,29 @@ class higherLevel(object):
 
 
     def psychometric_minimum_pupil(self, x,y, phase1, DFOUT):
-        # loop through initial values for parameters, save cost to make sure not stuck in local minimums
-        # mu, sigma, B, G are the sigmoid inputs for pupil
+        """Find minimum cost function of psychometric fit to accuracy data.
         
+        Parameters
+        ----------
+        x : numpy.array
+            X-axis array is trial numbers
+        y : numpy.array
+            Y-axis array is data for factor of interest
+        phase1 : boolean
+            True for phase 1, False for phase 2 trials.
+        DFOUT : pandas dataframe
+            The output dataframe
+        
+        Returns
+        -------
+        min_params : list
+            The parameters given the minimum cost function.
+        
+        Notes
+        -------
+        Loop through initial values for parameters, save cost to make sure not stuck in local minimums
+        mu, sigma, B, G are the sigmoid inputs for pupil.
+        """
         # INITIAL GUESSES FOR MODEL FIT
         # ----------------------------
         if phase1==1:
@@ -1073,8 +1335,31 @@ class higherLevel(object):
         return min_params[np.argmin(min_cost)]
     
     def psychometric_subplot_pupil(self, fig, phase1, play_tone, frequency, s, params, x,y):
-        # for each subject, plot the data and the curve fits with minimum parameters
+        """Plot the pupil data and the curve fits with minimum parameters in the current subject's subplot. 
         
+        Parameters
+        ----------
+        fig : matplotlib handle
+            Figure handle
+        phase1 : boolean
+            True for phase 1, False for phase 2 trials.
+        play_tone : boolean
+            True for tone trials, False for trials without a tone.
+        frequency : int
+            The frequency condition (20 or 80)
+        s : int
+            Subplot counter (subject)
+        params : list
+            List of parameters for psychometric function (mu, sigma, p0)
+        x : numpy.array
+            X-axis array is trial numbers
+        y : numpy.array
+            Y-axis array is data for factor of interest
+
+        Notes
+        -------
+        Figure as PDF in figure folder.
+        """        
         mu    = params[0]
         sigma = params[1]
         B     = params[2]
@@ -1128,9 +1413,14 @@ class higherLevel(object):
         print('success: psychometric_subplot_pupil')
         
     def psychometric_pupil(self,):
-        # Sigmoid with negative slope and gain parameter
-        # PUPIL DATA ()% signal change)
+        """Call the curve fit routine for the pupil data.
         
+        Notes
+        -------
+        Sigmoid with negative slope and gain parameter - 80% frequency condition
+        PUPIL DATA % signal change
+        Figure with all subjects' curve fits output in figure folder.
+        """
         # MODEL FIT CONDITIONS
         # ----------------------------
         dv = 'pupil_target_locked'  # accuracy
@@ -1179,8 +1469,12 @@ class higherLevel(object):
         print('success: psychometric_pupil')
     
     def housekeeping_rmanova(self,):
-        # restacks the dataframe for the rm-ANOVA format (JASP)
+        """Restacks the dataframe for the repeated-measures ANOVA format (JASP).
         
+        Notes
+        -------
+        Data frame input and output in Jasp folder.
+        """
         dvs = ['correct','pupil_target_locked']
         params = [
             ['mu', 'sigma', 'p0'],
@@ -1213,10 +1507,14 @@ class higherLevel(object):
         print('success: housekeeping_rmanova')
         
     def plot_psychometric_sigma(self,):
-        # Plots the sigma parameters from psychometric curve fits:
-        # phase1_tone_mapping1 vs. phase2_tone_mapping2
-        # Bar plots (1,2): Accuracy, then pupil dilation
+        """Plots the sigma parameters from psychometric curve fits as bar graphs per phase as x-ticks.
         
+        Notes
+        -------
+        The input dataframes are phase1_tone_mapping1 vs. phase2_tone_mapping2
+        Bar plots (1,2): Accuracy, then pupil dilation
+        Figure saved as PDF in figure folder.
+        """
         dvs = ['accuracy','pupil_target_locked']
         
         xticklabels = ['Phase 1','Phase 2'] # plot this phase1 first!
@@ -1270,11 +1568,20 @@ class higherLevel(object):
         print('success: plot_psychometric_sigma')
         
     def plot_pupil_behav_correlation(self,BW):
-        # Correlates the accuracy and pupil response across the trial bins, for each subject
-        # Take the difference of the M2 vs. M1, check tone trials only, because these change between the two phases
-        # transform rho coefficient through fischer Z-score
-        # plots one example participant, and then makes a raincloud plot of the rho coefficients at group level
+        """Correlate the accuracy and pupil response across the trial bins, for each subject.
         
+        Parameters
+        ----------
+        BW : int
+            The bin width in trials for averaging.
+        
+        Notes
+        -----
+        Take the difference of the M2 vs. M1, check tone trials only, because these change between the two phases.
+        Transform rho coefficient through fischer Z-score.
+        Plots one example participant, and then makes a raincloud plot of the rho coefficients at group level.
+        Figure output as PDF in figure folder.
+        """
         DFOUT = pd.DataFrame()
         DFOUT['subject'] = self.subjects
         
@@ -1371,10 +1678,19 @@ class higherLevel(object):
         print('success: pupil_behav_correlation')
     
     def plot_phasic_pupil_accuracy(self, BW):
-        # Phasic pupil target_locked interaction frequency and accuracy
-        # GROUP LEVEL DATA
-        # separate lines for correct, x-axis is frequency conditions
+        """Plot the phasic pupil target_locked interaction frequency and accuracy in each trial bin window.
         
+        Parameters
+        ----------
+        BW : int
+            The bin width in trials for averaging.
+        
+        Notes
+        -----
+        GROUP LEVEL DATA
+        Separate lines for correct, x-axis is frequency conditions.
+        Figure output as PDF in figure folder.
+        """
         ylim = [ 
             [-1.5,1.5], # t1
         ]

@@ -3,33 +3,34 @@
 """
 ================================================
 Differentiating between Bayesian parameter learning and structure learning based on behavioural and pupil measures
-
-Pre-processing Pupillometry
+PLOS ONE 2023 https://doi.org/10.1371/journal.pone.0270619
+Preprocessing Functions
 Python code O.Colizoli 2021 (olympia.colizoli@donders.ru.nl)
 Python 3.6
+
+Notes
+-----
+See T. Knapen & JW de Gee's eye signal operator script for original preprocessing functions
+>>> conda install -c conda-forge/label/gcc7 mne
 ================================================
 """
 
-import os, sys, subprocess
+import os
 import pandas as pd
 import numpy as np
 import scipy as sp
+from scipy.signal import butter, filtfilt
 import seaborn as sns
-import shutil
-from shutil import copyfile
-import re # regular expression
 from copy import deepcopy
 import matplotlib
 import matplotlib.pyplot as plt
-from lmfit import minimize, Parameters, Parameter, report_fit
+from lmfit import minimize, Parameters
 from fir import FIRDeconvolution
 import mne
-# conda install -c conda-forge/label/gcc7 mne
-import glm_functions
-from IPython import embed as shell # for debugging
-## SEE JW's eye signal operator script for original preprocessing functions
+import glm_functions_prediction as glm_functions
 
-# plot settings
+"""matplotlib and seaborn settings
+"""
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 sns.set(style='ticks', font='Arial', font_scale=1, rc={
@@ -48,8 +49,62 @@ sns.set(style='ticks', font='Arial', font_scale=1, rc={
 sns.plotting_context()
 
 class pupilPreprocess(object):
-    """pupilPreprocessing"""
+    """Define a class for the preprocessing of the pupil data.
+
+    Parameters
+    ----------
+    subject : string
+        Subject number.
+    edf : string
+        The name of the current subject's EDF file containing pupil data.
+    source_directory : string 
+        Path to the raw data directory.
+    project_directory : str
+        Path to the derivatives data directory.
+    sample_rate : int
+        Sampling rate of pupil data in Hertz.
+    tw_blinks : int or float
+        How many seconds to interpolate before and after blinks.
+    mph : int or float 
+        Detect peaks that are greater than minimum peak height.
+    mpd : int or float 
+        Blinks separated by minimum number of samples.
+    threshold : int or float 
+        Detect peaks (valleys) that are greater (smaller) than `threshold` in relation to their immediate neighbors.
+    
+    Attributes
+    ----------
+    subject : string
+        Subject number.
+    edf : string
+        The name of the current subject's EDF file containing pupil data.
+    source_directory : string 
+        Path to the raw data directory.
+    project_directory : str
+        Path to the derivatives data directory.
+    figure_folder : str
+        Path to the figure directory.
+    sample_rate : int
+        Sampling rate of pupil data in Hertz.
+    tw_blinks : int or float
+        How many seconds to interpolate before and after blinks.
+    mph : int or float 
+        Detect peaks that are greater than minimum peak height.
+    mpd : int or float 
+        Blinks separated by minimum number of samples.
+    threshold : int or float 
+        Detect peaks (valleys) that are greater (smaller) than `threshold` in relation to their immediate neighbors.
+    add_base : boolean
+        Refers to add baseline pupil back into time series. Needs to be initialized as True, regress_blinks_saccades() will make False if called.
+    self.blink_starts : empty array
+        place holder for blink starts.
+    self.blink_ends : empty array
+        place holder for blink ends.
+    
+    """
     def __init__(self, subject, edf, source_directory, project_directory, sample_rate, tw_blinks, mph, mpd, threshold):
+        """Constructor method
+        """
         self.subject = str(subject)
         self.alias = edf
         self.source_directory = os.path.join(source_directory,self.subject,'beh') # single-subject directory
@@ -72,10 +127,15 @@ class pupilPreprocess(object):
             os.makedirs(self.figure_folder)
        
     def read_trials(self,):
-        # Extracts messages and pupil from raw text files
-        # messages are in the 'L Raw X [px]' column
-        # pupil is in the 'R Dia X [px]' column
+        """Read in the message, markers, and data from the EDF pupil data file.
 
+        Notes
+        -------
+        Saves the pupil dilation time series in the project directory.
+        Extracts messages and pupil from raw text files:
+        Messages are in the 'L Raw X [px]' column.
+        Pupil is in the 'R Dia X [px]' column.
+        """
         usecols = ['Time','Type','L Raw X [px]','R Dia X [px]'] # only get these columns out
         # in source/sub-xx/sub-xx_task-predictions_eye.txt
         EDF = pd.read_csv(os.path.join(self.source_directory,'{}.txt'.format(self.alias)),skiprows=38,delimiter='\t',usecols=usecols)
@@ -92,14 +152,20 @@ class pupilPreprocess(object):
         # columns =['index', 'pupil']
         np.save(os.path.join(self.project_directory,'{}_pupil.npy'.format(self.alias)), np.array(self.TS))
         print('{} messages processed'.format(self.subject))
-
     
     def preprocess_pupil(self,):
-        # Carries out pupil preprocessing steps
-        # Current pupil time course is always 'self.pupil'
-        # Saves time series at each stage with labels, global variables  (e.g. self.pupil_interp)
-        cols1=['index', 'pupil'] # before preprocessing
-        cols2=['index', 'pupil', 'pupil_interp','pupil_bp','pupil_clean','pupil_psc', 'pupil_zscore']        
+        """Carries out pupil preprocessing routine.
+
+        Notes
+        -------
+        Current pupil time course is always 'self.pupil'.
+        Steps include: interpolation around blinks based on markers, then based on peaks, bandpass filtering, nuisance regression on blinks/saccades,
+        convert to percent signal change (z-score also saved).
+        Saves time series at each stage with labels, global variables  (e.g., self.pupil_interp)
+        Calls the preprocessing plot for each subject.
+        """
+        cols1 = ['index', 'pupil'] # before preprocessing
+        cols2 = ['index', 'pupil', 'pupil_interp','pupil_bp','pupil_clean','pupil_psc', 'pupil_zscore']        
                 
         try:
             self.TS = pd.DataFrame(np.load(os.path.join(self.project_directory,'{}_pupil.npy'.format(self.alias))),columns=cols1)
@@ -131,46 +197,47 @@ class pupilPreprocess(object):
         
     
     def detect_peaks(self, x, mph=None, mpd=1, threshold=0, edge='rising', kpsh=False, valley=False, show=False, ax=None):
-
     	"""Detect peaks in data based on their amplitude and other features.
-    	Parameters
+    	
+        Parameters
     	----------
     	x : 1D array_like
-    		data.
+    		Data.
     	mph : {None, number}, optional (default = None)
-    		detect peaks that are greater than minimum peak height.
+    		Detect peaks that are greater than minimum peak height.
     	mpd : positive integer, optional (default = 1)
-    		detect peaks that are at least separated by minimum peak distance (in
-    		number of data).
+    		Detect peaks that are at least separated by minimum peak distance (in number of data).
     	threshold : positive number, optional (default = 0)
-    		detect peaks (valleys) that are greater (smaller) than `threshold`
-    		in relation to their immediate neighbors.
+    		Detect peaks (valleys) that are greater (smaller) than `threshold` in relation to their immediate neighbors.
     	edge : {None, 'rising', 'falling', 'both'}, optional (default = 'rising')
-    		for a flat peak, keep only the rising edge ('rising'), only the
-    		falling edge ('falling'), both edges ('both'), or don't detect a
+    		For a flat peak, keep only the rising edge ('rising'), only the falling edge ('falling'), both edges ('both'), or don't detect a
     		flat peak (None).
     	kpsh : bool, optional (default = False)
-    		keep peaks with same height even if they are closer than `mpd`.
+    		Keep peaks with same height even if they are closer than `mpd`.
     	valley : bool, optional (default = False)
-    		if True (1), detect valleys (local minima) instead of peaks.
+    		If True (1), detect valleys (local minima) instead of peaks.
     	show : bool, optional (default = False)
-    		if True (1), plot data in matplotlib figure.
+    		If True (1), plot data in matplotlib figure.
     	ax : a matplotlib.axes.Axes instance, optional (default = None).
-    	Returns
+    	
+        Returns
     	-------
     	ind : 1D array_like
-    		indeces of the peaks in `x`.
-    	Notes
+    		Indices of the peaks in `x`.
+    	
+        Notes
     	-----
     	The detection of valleys instead of peaks is performed internally by simply
     	negating the data: `ind_valleys = detect_peaks(-x)`
 
     	The function can handle NaN's 
     	See this IPython Notebook [1]_.
-    	References
+    	
+        References
     	----------
     	.. [1] http://nbviewer.ipython.org/github/demotu/BMC/blob/master/notebooks/DetectPeaks.ipynb
-    	Examples
+    	
+        Examples
     	--------
     	>>> from detect_peaks import detect_peaks
     	>>> x = np.random.randn(100)
@@ -254,7 +321,18 @@ class pupilPreprocess(object):
     	return ind
         
     def detect_nans(self, pupil):
-        # identify start and end of missing data as blink 
+    	"""Identify start and end of missing data as blink.
+    	
+        Parameters
+    	----------
+    	pupil : 1D array_like
+    		Pupil data.
+        
+        Returns
+        -------
+        nan_start,nan_end : numpy arrays
+            Containing start and stop indices of each missing event.
+        """
         nan_start = []
         nan_end = []
         for idx,p in enumerate(pupil):
@@ -278,19 +356,14 @@ class pupilPreprocess(object):
         return np.array(nan_start), np.array(nan_end)
         
     def interpolate_blinks_peaks(self,):
+        """Perform linear interpolation around peaks in the rate of change of the pupil size.
         
+        Notes
+        -----
+        The results are stored in self.pupil_interp, self.pupil is also updated.
+        Change mpd,mph in peaks_down, peaks_up to make more or less conservative.
+        After calling this method, additional interpolation may be performed by calling self.interpolate_blinks_markers().
         """
-        interpolate_blinks_peaks performs linear interpolation around peaks in the rate of change of
-        the pupil size.
-        
-        The results are stored in self.pupil_interp, without affecting the self.raw_... variables.
-        
-        Change mpd,mph in peaks_down, peaks_up to make more or less conservative
-        
-        After calling this method, additional interpolation may be performed by calling self.interpolate_blinks_markers()
-        
-        """
-                
         time_window = self.time_window_blinks
         lin_interpolation_points = [[-1*self.sample_rate*time_window],[self.sample_rate*time_window]]
         coalesce_period = int(0.75*self.sample_rate)
@@ -339,15 +412,15 @@ class pupilPreprocess(object):
         print('pupil blinks interpolated from derivative')         
     
     def interpolate_blinks_markers(self, ):
-        """
-        interpolate_blinks interpolates blink periods with linear method
+        """Perform linear interpolation around blinks based on blink markers.
+        
+        Notes
+        -----
         Use after self.blink_detection_pupil().
-        spline_interpolation_points is a 2 by X list detailing the data points around the blinks
+        spline_interpolation_points() is a 2 by X list detailing the data points around the blinks
         (in s offset from blink start and end) that should be used for fitting the interpolation spline.
-
-        The results are stored in self.pupil_interp without affecting the self.pupil_raw_... variables
-
-        After calling this method, additional interpolation may be performed by calling self.interpolate_blinks2()
+        The results are stored in self.pupil_interp, self.pupil is also updated.
+        After calling this method, additional interpolation may be performed by calling self.interpolate_peaks()
         """
 
         time_window = self.time_window_blinks
@@ -403,19 +476,19 @@ class pupilPreprocess(object):
         print('pupil blinks interpolated from markers')
             
     def bandpass_filter(self,):
-        # Bandpass filtering
-        # 3rd order butterworth 0.01 to 6 Hz
-        from scipy.signal import butter, filtfilt
+        """Perform bandpass filtering on pupil time series (3rd order butterworth 0.01 to 6 Hz).
+        
+        Notes
+        -----
+        This way adds curved artifact to timeseries
+        b,a = butter(N, Wn, btype='bandpass')   # define filter
+        y = filtfilt(b, a, self.pupil)          # apply filter
+        """        
         N = 3 # order
         Nyquist = 0.5*self.sample_rate
         bpass = [0.01,6] # Hz
         Wn = np.true_divide(bpass,Nyquist) # [low,high]
         
-        # This way adds curved artifact to timeseries
-        # b,a = butter(N, Wn, btype='bandpass')   # define filter
-        # y = filtfilt(b, a, self.pupil)          # apply filter
-
-        # Following JW's scripts
         # low pass
         b,a = butter(N,Wn[1],btype='lowpass') # enter high cutoff value
         self.pupil_lp = filtfilt(b, a, self.pupil.astype('float64'))
@@ -426,6 +499,7 @@ class pupilPreprocess(object):
         
         # bandpassed
         self.pupil_bp = self.pupil_hp - (self.pupil-self.pupil_lp)
+        
         # baseline pupil
         self.pupil_baseline = self.pupil_lp - self.pupil_bp
 
@@ -433,9 +507,16 @@ class pupilPreprocess(object):
         print('pupil bandpass filtered butterworth')
     
     def regress_blinks_saccades(self,):
-        # Blinks/saccades estimated with deconvolution
-        # Then removed via linear regression
+        """Perform linear regression on pupil time series to remove blink and saccade events.
         
+        Notes
+        -----
+        Blink/saccade events are combined into a single nuisance regressor because they were not tagged seperately.
+        The nuisance event is estimated based on deconvolution (see output in figure folder), 
+        then this response is removed from the time series with linear regression.
+        The residuals of this regression are of interest for the pupil analyses as self.pupil_clean. 
+        Also, self.pupil is updated.
+        """
         plot_IRFs = True # plot for each subject the deconvolved responses in fig folder
         self.add_base = False
         # params:
@@ -581,8 +662,13 @@ class pupilPreprocess(object):
         print('pupil blinks and saccades removed with linear regression')
            
     def percent_signal_change(self,):
-        # Converts processed pupil to percent signal change with respect to mean (or median?) of current run
-        # (timeseries/median*100)-100 # or mean?
+        """Convert processed pupil to percent signal change with respect to the temporal mean.
+        
+        Notes
+        -----
+        For median use: (timeseries/median*100)-100
+        self.pupil is not updated.
+        """
         if self.add_base: # did not regress out blinks/saccades
             self.pupil_psc = self.pupil + self.pupil_baseline.mean()
         else:
@@ -592,8 +678,12 @@ class pupilPreprocess(object):
         print('pupil converted percent signal change')
     
     def zscore(self,):
-        # Converts processed pupil to percent signal change with respect to mean (or median?) of current run
-        # (timeseries/median*100)-100 # or mean?
+        """Z-score pupil time series.
+        
+        Notes
+        -----
+        self.pupil is not updated.
+        """
         if self.add_base: # did not regress out blinks/saccades
             self.pupil_zscore = self.pupil + self.pupil_baseline.mean()
         else:
@@ -603,10 +693,14 @@ class pupilPreprocess(object):
         print('pupil z-scored')
         
     def plot_pupil(self,):               
-        # plots the pupil in all stages
-        # 1: raw, 2: blink interpolated, 3: temporal filtering, 4: blinks/saccades removed, 5: percent signal change, 6: z-score
-        # pupil is downsampled for plotting
-        # saved in 'figures' folder
+        """Plot the pupil in all preprocessing stages (1 figure per subject).
+        
+        Notes
+        -----
+        subplots are... 1: raw, 2: blink interpolated, 3: temporal filtering, 4: blinks/saccades removed, 5: percent signal change, 6: z-score
+        The pupil is downsampled for plotting.
+        The figure is saved as PDF in the figure folder.
+        """
         from scipy.signal import decimate
         downsample_rate = 2 # Hz, the lower, the faster the plotting goes
         downsample_factor = self.sample_rate / downsample_rate # 50
@@ -695,30 +789,94 @@ class pupilPreprocess(object):
         fig.savefig(os.path.join(self.figure_folder,'{}_preprocessing.pdf'.format(self.subject)))
     
 class trials(object):
-    def __init__(self,subject, edf, project_directory,sample_rate,phases,time_locked,pupil_step_lim,baseline_window,pupil_time_of_interest):
+    """Define a class for the single trial level pupil data.
+
+    Parameters
+    ----------
+    subject : string
+        Subject number.
+    edf : string
+        The name of the current subject's EDF file containing pupil data.
+    project_directory : str
+        Path to the derivatives data directory.
+    sample_rate : int
+        Sampling rate of pupil data in Hertz.
+    phases : list
+        Message markers for each event of interest in EDF file as a list of strings (e.g., ['cue','target']).
+    time_locked : list
+        List of strings indiciting the events for time locking that should be analyzed (e.g., ['cue_locked','target_locked']).
+    pupil_step_lim : list 
+        List of arrays indicating the size of pupil trial kernels in seconds with respect to first event, first element should max = 0! (e.g., [[-baseline_window,3],[-baseline_window,3]] ).
+    baseline_window : float
+        Number of seconds before each event in self.time_locked that are averaged for baseline correction.
+    pupil_time_of_interest : list
+        List of arrays indicating the time windows in seconds in which to average evoked responses, per event in self.time_locked, see in higher.plot_evoked_pupil (e.g., [[1.0,2.0],[1.0,2.0]]).
+    
+    Attributes
+    ----------
+    subject : string
+        Subject number.
+    alias : string
+        The name of the current subject's EDF file containing pupil data.
+    project_directory : str
+        Path to the derivatives data directory.
+    figure_folder : str
+        Path to the figure directory.
+    sample_rate : int
+        Sampling rate of pupil data in Hertz.
+    phases : list
+        Message markers for each event of interest in EDF file as a list of strings (e.g., ['cue','target']).
+    time_locked : list
+        List of strings indiciting the events for time locking that should be analyzed (e.g., ['cue_locked','target_locked']).
+    pupil_step_lim : list 
+        List of arrays indicating the size of pupil trial kernels in seconds with respect to first event, first element should max = 0! (e.g., [[-baseline_window,3],[-baseline_window,3]] ).
+    baseline_window : float
+        Number of seconds before each event in self.time_locked that are averaged for baseline correction.
+    pupil_time_of_interest : list
+        List of arrays indicating the time windows in seconds in which to average evoked responses, per event in self.time_locked, see in higher.plot_evoked_pupil (e.g., [[1.0,2.0],[1.0,2.0]]).
+
+    """
+    
+    def __init__(self,subject, edf, project_directory, sample_rate, phases, time_locked, pupil_step_lim, baseline_window, pupil_time_of_interest):
         self.subject = subject
         self.alias = edf
         self.project_directory = os.path.join(project_directory,self.subject,'beh') # single-subject directory
         self.figure_folder = os.path.join(project_directory,'figures','preprocessing') # group-level directory for easy inspection
         self.sample_rate = sample_rate
         self.phases = phases
-                
         ##############################    
         # Pupil time series information:
         ##############################
         self.time_locked = time_locked
         self.pupil_step_lim = pupil_step_lim # size of pupil trials in seconds with respect to first event, first element should max = 0!
         self.baseline_window = baseline_window # seconds before event of interest
-        self.pupil_time_of_interest = pupil_time_of_interest     # test on all data
-        # For plotting
-        self.downsample_rate = 20 # 20 Hz
-        self.downsample_factor = self.sample_rate / self.downsample_rate
+        self.pupil_time_of_interest = pupil_time_of_interest   # test on all data
         
         if not os.path.isdir(self.figure_folder):
             os.mkdir(self.figure_folder)
     
     def cluster_sig_bar_1samp(self, array, x, yloc, color, ax, threshold=0.05, nrand=5000, cluster_correct=True):
-        # permutation-based cluster correction on time courses, then plots the stats as a bar in yloc
+    	"""Permutation-based cluster correction on time courses, plot the stats as a bar in yloc.
+    	
+        Parameters
+    	----------
+        array : array_like
+            Data.
+    	x : 1D array_like
+    		X-axis.
+    	yloc : int or float
+    		The location of the significance bar with respect to the y-axis.
+    	color : string
+    		The color of the significance bar.
+    	ax : a matplotlib.axes.Axes instance, optional (default = None).
+            The figure or subplot handle.
+        threshold : float, optional (default = 0.05)
+    		Alpha level for significance testing.
+    	nrand : float or int, optional (default = 5000)
+    		Number of repetitions for permutation.
+    	cluster_correct : bool, optional (default = True)
+    		Implement cluster-based corrected for significance testing.
+    	"""
         if yloc == 1:
             yloc = 10
         if yloc == 2:
@@ -758,10 +916,18 @@ class trials(object):
                 ax.hlines(((ax.get_ylim()[1] - ax.get_ylim()[0]) / yloc)+ax.get_ylim()[0], x[int(sig[0])]-(np.diff(x)[0] / 2.0), x[int(sig[1])]+(np.diff(x)[0] / 2.0), color=color, alpha=1, linewidth=2.5)
                 
     def event_related_subjects(self,pupil_dv):
-        # Cuts out time series of pupil data locked to time points of interest
-        # Saves events as numpy arrays per subject in dataframe folder/subjects per event of interest
-        # Rows = trials x kernel length
+    	"""Cut out time series of pupil data locked to time points of interest within the given kernel.
         
+        Parameters
+    	----------
+        pupil_dv : string
+            The pupil time series to be processed (e.g., 'pupil_psc' or 'pupil_zscore')
+        
+        Notes
+        -----
+        Saves events as numpy arrays per subject in dataframe folder/subjects per event of interest.
+        Rows = trials x kernel length
+    	"""        
         cols=['index', 'pupil', 'pupil_interp','pupil_bp','pupil_clean','pupil_psc', 'pupil_zscore']
         
         # loop through each type of event to lock events to...
@@ -794,8 +960,12 @@ class trials(object):
         print('sucess: event_related_subjects')
     
     def event_related_baseline_correction(self):
-        # Baseline correction on evoked responses, saves baseline pupil in behav log file
-                      
+    	"""Baseline correction on evoked responses, per trial. 
+        
+        Notes
+        -----
+        Saves baseline pupil in behavioral log file.
+    	"""                 
         # loop through each type of event to lock events to...
         for t,time_locked in enumerate(self.time_locked):
             pupil_step_lim = self.pupil_step_lim[t]
