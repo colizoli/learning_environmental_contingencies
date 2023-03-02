@@ -7,6 +7,10 @@ PLOS ONE 2023 https://doi.org/10.1371/journal.pone.0270619
 Higher Level Functions
 Python code O.Colizoli 2021 (olympia.colizoli@donders.ru.nl)
 Python 3.6
+
+Notes
+-----
+>>> conda install -c conda-forge/label/gcc7 mne
 ================================================
 """
 
@@ -21,11 +25,8 @@ import scipy as sp
 import scipy.stats as stats
 import scipy.optimize as optim
 import ptitprince as pt #raincloud plots
-
-#conda install -c conda-forge/label/gcc7 mne
 from copy import deepcopy
 
-# from IPython import embed as shell # used for debugging
 
 """ Plotting Format
 ############################################
@@ -166,7 +167,6 @@ class higherLevel(object):
         neglogL : float
             Negative log likelihood.
         """
-        
         mu, sigma, p0 = parameters
         p = p0+(1-p0)*stats.norm.cdf(x_data, loc=mu, scale=sigma)
         L = p*response_data + (1-p)*(1-response_data)
@@ -195,7 +195,6 @@ class higherLevel(object):
         cost : float
             cost function sum of squared error.
         """
-        
         mu, sigma, B, G = parameters
         # b + gain * norm.cdf
         S = B+G*stats.norm.cdf(x_data, loc=mu, scale=sigma)
@@ -220,10 +219,8 @@ class higherLevel(object):
         kw : list
             Optional keyword arguments for matplotlib.plot().
         """
-
         x = np.arange(data.shape[1])
         est = np.mean(data, axis=0)
-        sd = np.std(data, axis=0)
         cis = self.bootstrap(data)
         ax.fill_between(x,cis[0],cis[1],alpha=0.2,**kw) # debug double label!
         ax.plot(x,est,alpha=alpha_line,**kw)
@@ -248,7 +245,6 @@ class higherLevel(object):
         (s1,s2) : tuple
             Confidence interval.
         """
-        
         boot_dist = []
         for i in range(int(n_boot)):
             resampler = np.random.randint(0, data.shape[0], data.shape[0])
@@ -288,7 +284,6 @@ class higherLevel(object):
         cluster_correct : bool 
             Perform cluster-based multiple comparison correction if True (default True).
         """
-        
         if yloc == 1:
             yloc = 10
         if yloc == 2:
@@ -340,7 +335,6 @@ class higherLevel(object):
         0.5*np.log((1+r)/(1-r)) : ndarray
             Array of shape r with normalized coefficients.
         """
-        
         return 0.5*np.log((1+r)/(1-r))
     
     def higherlevel_log_conditions(self,):
@@ -362,11 +356,6 @@ class higherLevel(object):
         mapping_counter = ['0_True_315','0_False_315','45_True_45','45_False_45']
         .
         """
-        
-        # models congruency flips after 200 trials: trials 1-200 phase1, trials 201-400 phase2
-        phase1 = np.arange(1,201) # excluding 201
-        phase2 = np.arange(201,401) # excluding 401
-        
         # loop through subjects' log files
         # make a copy in derivatives folder to add phasics to
         for s,subj in enumerate(self.subjects):
@@ -687,11 +676,9 @@ class higherLevel(object):
         
             xticklabels = ['M1','M2'] # plot M1 first!
             xind = np.arange(len(xticklabels))
-            bar_width = 0.35
         
             labels = ['No Tone','Tone']
             colors = ['orange','orange']
-            alphas = [1, 1]
             fmt = ['-', '--']
                 
             for B in np.unique(GROUP['bin_index']): # subplot for each bin
@@ -996,7 +983,6 @@ class higherLevel(object):
         COND = pd.read_csv(os.path.join(self.dataframe_folder,'{}_{}_evoked_{}.csv'.format(self.exp,time_locked,factor)))
         COND = COND.loc[:, ~COND.columns.str.contains('^Unnamed')] # remove all unnamed columns
         xticklabels = ['No Tone','Tone']
-        colors = ['orange','orange']
         alphas = [1, 0.3]
         colorsts = ['orange','orange']
         save_conds = []
@@ -1273,7 +1259,7 @@ class higherLevel(object):
                 self.psychometric_subplot_accuracy(fig, phase1, play_tone, frequency, s, [mu,sigma,p0], x,y)
             # whole figure format, this phase
             # plt.tight_layout()
-            fig.savefig(os.path.join(self.figure_folder,'{}_psychometric_accuracy_phase1{}.pdf'.format(self.exp,phase1)))
+            fig.savefig(os.path.join(self.figure_folder,'{}_psychometric_accuracy_phase{}.pdf'.format(self.exp,phase1)))
         print('success: psychometric_accuracy')
 
 
@@ -1310,10 +1296,9 @@ class higherLevel(object):
         init_sigma  = [5,75,150]
         init_B      = [2,50,200]
         init_G      = [-0.1,-1,-10]
+
+        # Linear constraints (no bounds)
         # ----------------------------
-        '''
-        Linear constraints (no bounds)
-        '''
         lincon = optim.LinearConstraint([1, -3, 0, 0], 0, 250) # linear constraints on curve fit
         
         # save minimums
@@ -1380,9 +1365,7 @@ class higherLevel(object):
         ax.set_title('{}, sigma={}'.format(self.subjects[s], np.round(sigma,2)))
         ax.set_ylabel('Target-locked pupil\n(%signal change)')
         ax.set_ylim([-15,15])
-        # ax.set_yticks([0.0,0.2,0.4,0.6,0.8,1])
         ax.set_xlabel('Trial number')
-        # ax.set_xticks(xticks1[phase1])
         if s<1:
             ax.legend()
         ax.axis("off")
@@ -1464,8 +1447,7 @@ class higherLevel(object):
                 # SUBPLOT PER PARTICIPANT
                 self.psychometric_subplot_pupil(fig, phase1, play_tone, frequency, s, [mu,sigma,B,G], x,y)
             # whole figure format, this phase
-            # plt.tight_layout()
-            fig.savefig(os.path.join(self.figure_folder,'{}_psychometric_pupil_phase1{}.pdf'.format(self.exp,phase1)))
+            fig.savefig(os.path.join(self.figure_folder,'{}_psychometric_pupil_phase{}.pdf'.format(self.exp,phase1)))
         print('success: psychometric_pupil')
     
     def housekeeping_rmanova(self,):
@@ -1476,10 +1458,6 @@ class higherLevel(object):
         Data frame input and output in Jasp folder.
         """
         dvs = ['correct','pupil_target_locked']
-        params = [
-            ['mu', 'sigma', 'p0'],
-            ['mu', 'sigma', 'B', 'G']
-        ]
         
         for dv in dvs:
             if dv == 'correct':
@@ -1522,7 +1500,6 @@ class higherLevel(object):
         alphas = [1,0.5] # phase1, phase2
         
         xind = np.arange(len(xticklabels))
-        bar_width = 0.35
     
         # single figure
         fig = plt.figure(figsize=(2,4))
@@ -1552,14 +1529,13 @@ class higherLevel(object):
                 print(np.array(MEANS[ph]))
             
             # alternative plot
-            # ax.violinplot(np.array(DF), positions=xind, showmeans=True, showextrema=True,)
+            ## ax.violinplot(np.array(DF), positions=xind, showmeans=True, showextrema=True,)
             
             # set figure parameters
             ax.set_title('{}'.format(pupil_dv))
             ax.set_ylabel('Sigma')
             ax.set_xticks(xind)
             ax.set_xticklabels(xticklabels)
-            # ax.legend()s
 
             # whole figure format
             sns.despine(offset=10, trim=True)
@@ -1705,7 +1681,6 @@ class higherLevel(object):
         colors = ['red','blue'] 
         
         xind = np.arange(len(xticklabels))
-        dot_offset = [0.1,-0.1]
         
         if BW < 100:
             figsize = 10 

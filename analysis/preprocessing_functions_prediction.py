@@ -103,8 +103,7 @@ class pupilPreprocess(object):
     
     """
     def __init__(self, subject, edf, source_directory, project_directory, sample_rate, tw_blinks, mph, mpd, threshold):
-        """Constructor method
-        """
+        """Constructor method"""
         self.subject = str(subject)
         self.alias = edf
         self.source_directory = os.path.join(source_directory,self.subject,'beh') # single-subject directory
@@ -197,137 +196,137 @@ class pupilPreprocess(object):
         
     
     def detect_peaks(self, x, mph=None, mpd=1, threshold=0, edge='rising', kpsh=False, valley=False, show=False, ax=None):
-    	"""Detect peaks in data based on their amplitude and other features.
-    	
+        """Detect peaks in data based on their amplitude and other features.
+        
         Parameters
-    	----------
-    	x : 1D array_like
-    		Data.
-    	mph : {None, number}, optional (default = None)
-    		Detect peaks that are greater than minimum peak height.
-    	mpd : positive integer, optional (default = 1)
-    		Detect peaks that are at least separated by minimum peak distance (in number of data).
-    	threshold : positive number, optional (default = 0)
-    		Detect peaks (valleys) that are greater (smaller) than `threshold` in relation to their immediate neighbors.
-    	edge : {None, 'rising', 'falling', 'both'}, optional (default = 'rising')
-    		For a flat peak, keep only the rising edge ('rising'), only the falling edge ('falling'), both edges ('both'), or don't detect a
-    		flat peak (None).
-    	kpsh : bool, optional (default = False)
-    		Keep peaks with same height even if they are closer than `mpd`.
-    	valley : bool, optional (default = False)
-    		If True (1), detect valleys (local minima) instead of peaks.
-    	show : bool, optional (default = False)
-    		If True (1), plot data in matplotlib figure.
-    	ax : a matplotlib.axes.Axes instance, optional (default = None).
-    	
+        ----------
+        x : 1D array_like
+            Data.
+        mph : {None, number}, optional (default = None)
+            Detect peaks that are greater than minimum peak height.
+        mpd : positive integer, optional (default = 1)
+            Detect peaks that are at least separated by minimum peak distance (in number of data).
+        threshold : positive number, optional (default = 0)
+            Detect peaks (valleys) that are greater (smaller) than `threshold` in relation to their immediate neighbors.
+        edge : {None, 'rising', 'falling', 'both'}, optional (default = 'rising')
+            For a flat peak, keep only the rising edge ('rising'), only the falling edge ('falling'), both edges ('both'), or don't detect a
+            flat peak (None).
+        kpsh : bool, optional (default = False)
+            Keep peaks with same height even if they are closer than `mpd`.
+        valley : bool, optional (default = False)
+            If True (1), detect valleys (local minima) instead of peaks.
+        show : bool, optional (default = False)
+            If True (1), plot data in matplotlib figure.
+        ax : a matplotlib.axes.Axes instance, optional (default = None).
+        
         Returns
-    	-------
-    	ind : 1D array_like
-    		Indices of the peaks in `x`.
-    	
+        -------
+        ind : 1D array_like
+            Indices of the peaks in `x`.
+        
         Notes
-    	-----
-    	The detection of valleys instead of peaks is performed internally by simply
-    	negating the data: `ind_valleys = detect_peaks(-x)`
+        -----
+        The detection of valleys instead of peaks is performed internally by simply
+        negating the data: `ind_valleys = detect_peaks(-x)`
 
-    	The function can handle NaN's 
-    	See this IPython Notebook [1]_.
-    	
+        The function can handle NaN's 
+        See this IPython Notebook [1]_.
+        
         References
-    	----------
-    	.. [1] http://nbviewer.ipython.org/github/demotu/BMC/blob/master/notebooks/DetectPeaks.ipynb
-    	
+        ----------
+        .. [1] http://nbviewer.ipython.org/github/demotu/BMC/blob/master/notebooks/DetectPeaks.ipynb
+        
         Examples
-    	--------
-    	>>> from detect_peaks import detect_peaks
-    	>>> x = np.random.randn(100)
-    	>>> x[60:81] = np.nan
-    	>>> # detect all peaks and plot data
-    	>>> ind = detect_peaks(x, show=True)
-    	>>> print(ind)
-    	>>> x = np.sin(2*np.pi*5*np.linspace(0, 1, 200)) + np.random.randn(200)/5
-    	>>> # set minimum peak height = 0 and minimum peak distance = 20
-    	>>> detect_peaks(x, mph=0, mpd=20, show=True)
-    	>>> x = [0, 1, 0, 2, 0, 3, 0, 2, 0, 1, 0]
-    	>>> # set minimum peak distance = 2
-    	>>> detect_peaks(x, mpd=2, show=True)
-    	>>> x = np.sin(2*np.pi*5*np.linspace(0, 1, 200)) + np.random.randn(200)/5
-    	>>> # detection of valleys instead of peaks
-    	>>> detect_peaks(x, mph=0, mpd=20, valley=True, show=True)
-    	>>> x = [0, 1, 1, 0, 1, 1, 0]
-    	>>> # detect both edges
-    	>>> detect_peaks(x, edge='both', show=True)
-    	>>> x = [-2, 1, -2, 2, 1, 1, 3, 0]
-    	>>> # set threshold = 2
-    	>>> detect_peaks(x, threshold = 2, show=True)
-    	"""
-    	x = np.atleast_1d(x).astype('float64')
-    	if x.size < 3:
-    		return np.array([], dtype=int)
-    	if valley:
-    		x = -x
-    	# find indices of all peaks
-    	dx = x[1:] - x[:-1]
-    	# handle NaN's
-    	indnan = np.where(np.isnan(x))[0]
-    	if indnan.size:
-    		x[indnan] = np.inf
-    		dx[np.where(np.isnan(dx))[0]] = np.inf
-    	ine, ire, ife = np.array([[], [], []], dtype=int)
-    	if not edge:
-    		ine = np.where((np.hstack((dx, 0)) < 0) & (np.hstack((0, dx)) > 0))[0]
-    	else:
-    		if edge.lower() in ['rising', 'both']:
-    			ire = np.where((np.hstack((dx, 0)) <= 0) & (np.hstack((0, dx)) > 0))[0]
-    		if edge.lower() in ['falling', 'both']:
-    			ife = np.where((np.hstack((dx, 0)) < 0) & (np.hstack((0, dx)) >= 0))[0]
-    	ind = np.unique(np.hstack((ine, ire, ife)))
-    	# handle NaN's
-    	if ind.size and indnan.size:
-    		# NaN's and values close to NaN's cannot be peaks
-    		ind = ind[np.in1d(ind, np.unique(np.hstack((indnan, indnan-1, indnan+1))), invert=True)]
-    	# first and last values of x cannot be peaks
-    	if ind.size and ind[0] == 0:
-    		ind = ind[1:]
-    	if ind.size and ind[-1] == x.size-1:
-    		ind = ind[:-1]
-    	# remove peaks < minimum peak height
-    	if ind.size and mph is not None:
-    		ind = ind[x[ind] >= mph]
-    	# remove peaks - neighbors < threshold
-    	if ind.size and threshold > 0:
-    		dx = np.min(np.vstack([x[ind]-x[ind-1], x[ind]-x[ind+1]]), axis=0)
-    		ind = np.delete(ind, np.where(dx < threshold)[0])
-    	# detect small peaks closer than minimum peak distance
-    	if ind.size and mpd > 1:
-    		ind = ind[np.argsort(x[ind])][::-1]  # sort ind by peak height
-    		idel = np.zeros(ind.size, dtype=bool)
-    		for i in range(ind.size):
-    			if not idel[i]:
-    				# keep peaks with the same height if kpsh is True
-    				idel = idel | (ind >= ind[i] - mpd) & (ind <= ind[i] + mpd) \
-    					& (x[ind[i]] > x[ind] if kpsh else True)
-    				idel[i] = 0  # Keep current peak
-    		# remove the small peaks and sort back the indices by their occurrence
-    		ind = np.sort(ind[~idel])
+        --------
+        >>> from detect_peaks import detect_peaks
+        >>> x = np.random.randn(100)
+        >>> x[60:81] = np.nan
+        >>> # detect all peaks and plot data
+        >>> ind = detect_peaks(x, show=True)
+        >>> print(ind)
+        >>> x = np.sin(2*np.pi*5*np.linspace(0, 1, 200)) + np.random.randn(200)/5
+        >>> # set minimum peak height = 0 and minimum peak distance = 20
+        >>> detect_peaks(x, mph=0, mpd=20, show=True)
+        >>> x = [0, 1, 0, 2, 0, 3, 0, 2, 0, 1, 0]
+        >>> # set minimum peak distance = 2
+        >>> detect_peaks(x, mpd=2, show=True)
+        >>> x = np.sin(2*np.pi*5*np.linspace(0, 1, 200)) + np.random.randn(200)/5
+        >>> # detection of valleys instead of peaks
+        >>> detect_peaks(x, mph=0, mpd=20, valley=True, show=True)
+        >>> x = [0, 1, 1, 0, 1, 1, 0]
+        >>> # detect both edges
+        >>> detect_peaks(x, edge='both', show=True)
+        >>> x = [-2, 1, -2, 2, 1, 1, 3, 0]
+        >>> # set threshold = 2
+        >>> detect_peaks(x, threshold = 2, show=True)
+        """
+        x = np.atleast_1d(x).astype('float64')
+        if x.size < 3:
+            return np.array([], dtype=int)
+        if valley:
+            x = -x
+        # find indices of all peaks
+        dx = x[1:] - x[:-1]
+        # handle NaN's
+        indnan = np.where(np.isnan(x))[0]
+        if indnan.size:
+            x[indnan] = np.inf
+            dx[np.where(np.isnan(dx))[0]] = np.inf
+        ine, ire, ife = np.array([[], [], []], dtype=int)
+        if not edge:
+            ine = np.where((np.hstack((dx, 0)) < 0) & (np.hstack((0, dx)) > 0))[0]
+        else:
+            if edge.lower() in ['rising', 'both']:
+                ire = np.where((np.hstack((dx, 0)) <= 0) & (np.hstack((0, dx)) > 0))[0]
+            if edge.lower() in ['falling', 'both']:
+                ife = np.where((np.hstack((dx, 0)) < 0) & (np.hstack((0, dx)) >= 0))[0]
+        ind = np.unique(np.hstack((ine, ire, ife)))
+        # handle NaN's
+        if ind.size and indnan.size:
+            # NaN's and values close to NaN's cannot be peaks
+            ind = ind[np.in1d(ind, np.unique(np.hstack((indnan, indnan-1, indnan+1))), invert=True)]
+        # first and last values of x cannot be peaks
+        if ind.size and ind[0] == 0:
+            ind = ind[1:]
+        if ind.size and ind[-1] == x.size-1:
+            ind = ind[:-1]
+        # remove peaks < minimum peak height
+        if ind.size and mph is not None:
+            ind = ind[x[ind] >= mph]
+        # remove peaks - neighbors < threshold
+        if ind.size and threshold > 0:
+            dx = np.min(np.vstack([x[ind]-x[ind-1], x[ind]-x[ind+1]]), axis=0)
+            ind = np.delete(ind, np.where(dx < threshold)[0])
+        # detect small peaks closer than minimum peak distance
+        if ind.size and mpd > 1:
+            ind = ind[np.argsort(x[ind])][::-1]  # sort ind by peak height
+            idel = np.zeros(ind.size, dtype=bool)
+            for i in range(ind.size):
+                if not idel[i]:
+                    # keep peaks with the same height if kpsh is True
+                    idel = idel | (ind >= ind[i] - mpd) & (ind <= ind[i] + mpd) \
+                        & (x[ind[i]] > x[ind] if kpsh else True)
+                    idel[i] = 0  # Keep current peak
+            # remove the small peaks and sort back the indices by their occurrence
+            ind = np.sort(ind[~idel])
 
-    	if show:
-    		if indnan.size:
-    			x[indnan] = np.nan
-    		if valley:
-    			x = -x
-    		_plot(x, mph, mpd, threshold, edge, valley, ax, ind)
+        if show:
+            if indnan.size:
+                x[indnan] = np.nan
+            if valley:
+                x = -x
+            _plot(x, mph, mpd, threshold, edge, valley, ax, ind)
 
-    	return ind
+        return ind
         
     def detect_nans(self, pupil):
-    	"""Identify start and end of missing data as blink.
-    	
+        """Identify start and end of missing data as blink.
+            
         Parameters
-    	----------
-    	pupil : 1D array_like
-    		Pupil data.
-        
+        ----------
+        pupil : 1D array_like
+            Pupil data.
+            
         Returns
         -------
         nan_start,nan_end : numpy arrays
@@ -422,7 +421,6 @@ class pupilPreprocess(object):
         The results are stored in self.pupil_interp, self.pupil is also updated.
         After calling this method, additional interpolation may be performed by calling self.interpolate_peaks()
         """
-
         time_window = self.time_window_blinks
         lin_interpolation_points = [[-1*self.sample_rate*time_window],[self.sample_rate*time_window]]
         coalesce_period = int(0.75*self.sample_rate)
@@ -838,6 +836,7 @@ class trials(object):
     """
     
     def __init__(self,subject, edf, project_directory, sample_rate, phases, time_locked, pupil_step_lim, baseline_window, pupil_time_of_interest):
+        """Constructor method"""
         self.subject = subject
         self.alias = edf
         self.project_directory = os.path.join(project_directory,self.subject,'beh') # single-subject directory
@@ -856,27 +855,27 @@ class trials(object):
             os.mkdir(self.figure_folder)
     
     def cluster_sig_bar_1samp(self, array, x, yloc, color, ax, threshold=0.05, nrand=5000, cluster_correct=True):
-    	"""Permutation-based cluster correction on time courses, plot the stats as a bar in yloc.
-    	
+        """Permutation-based cluster correction on time courses, plot the stats as a bar in yloc.
+        
         Parameters
-    	----------
+        ----------
         array : array_like
             Data.
-    	x : 1D array_like
-    		X-axis.
-    	yloc : int or float
-    		The location of the significance bar with respect to the y-axis.
-    	color : string
-    		The color of the significance bar.
-    	ax : a matplotlib.axes.Axes instance, optional (default = None).
+        x : 1D array_like
+            X-axis.
+        yloc : int or float
+            The location of the significance bar with respect to the y-axis.
+        color : string
+            The color of the significance bar.
+        ax : a matplotlib.axes.Axes instance, optional (default = None).
             The figure or subplot handle.
         threshold : float, optional (default = 0.05)
-    		Alpha level for significance testing.
-    	nrand : float or int, optional (default = 5000)
-    		Number of repetitions for permutation.
-    	cluster_correct : bool, optional (default = True)
-    		Implement cluster-based corrected for significance testing.
-    	"""
+            Alpha level for significance testing.
+        nrand : float or int, optional (default = 5000)
+            Number of repetitions for permutation.
+        cluster_correct : bool, optional (default = True)
+            Implement cluster-based corrected for significance testing.
+        """
         if yloc == 1:
             yloc = 10
         if yloc == 2:
@@ -887,7 +886,6 @@ class trials(object):
             yloc = 40
         if yloc == 5:
             yloc = 50
-    
         if cluster_correct:
             whatever, clusters, pvals, bla = mne.stats.permutation_cluster_1samp_test(array, n_permutations=nrand, n_jobs=10)
             for j, cl in enumerate(clusters):
@@ -916,24 +914,23 @@ class trials(object):
                 ax.hlines(((ax.get_ylim()[1] - ax.get_ylim()[0]) / yloc)+ax.get_ylim()[0], x[int(sig[0])]-(np.diff(x)[0] / 2.0), x[int(sig[1])]+(np.diff(x)[0] / 2.0), color=color, alpha=1, linewidth=2.5)
                 
     def event_related_subjects(self,pupil_dv):
-    	"""Cut out time series of pupil data locked to time points of interest within the given kernel.
-        
+        """Cut out time series of pupil data locked to time points of interest within the given kernel.
+            
         Parameters
-    	----------
+            ----------
         pupil_dv : string
             The pupil time series to be processed (e.g., 'pupil_psc' or 'pupil_zscore')
-        
+            
         Notes
         -----
         Saves events as numpy arrays per subject in dataframe folder/subjects per event of interest.
         Rows = trials x kernel length
-    	"""        
-        cols=['index', 'pupil', 'pupil_interp','pupil_bp','pupil_clean','pupil_psc', 'pupil_zscore']
+        """        
+        cols = ['index', 'pupil', 'pupil_interp','pupil_bp','pupil_clean','pupil_psc', 'pupil_zscore']
         
         # loop through each type of event to lock events to...
         for t,time_locked in enumerate(self.time_locked):
             pupil_step_lim = self.pupil_step_lim[t]
-
             TS = pd.DataFrame(np.load(os.path.join(self.project_directory,'{}_pupil_preprocessed.npy'.format(self.alias))),columns=cols)   
             TS = TS.loc[:,['index',pupil_dv]] # don't need all columns            
             # get indices of phases with respect to full time series (add 1 because always one cell before event)
@@ -960,16 +957,15 @@ class trials(object):
         print('sucess: event_related_subjects')
     
     def event_related_baseline_correction(self):
-    	"""Baseline correction on evoked responses, per trial. 
+        """Baseline correction on evoked responses, per trial. 
         
         Notes
         -----
         Saves baseline pupil in behavioral log file.
-    	"""                 
+        """                 
         # loop through each type of event to lock events to...
         for t,time_locked in enumerate(self.time_locked):
             pupil_step_lim = self.pupil_step_lim[t]
-
             P = pd.read_csv(os.path.join(self.project_directory,'{}_{}_pupil_events.csv'.format(self.alias,time_locked)))
             P.drop(['Unnamed: 0'],axis=1,inplace=True)
             P = np.array(P)
@@ -992,5 +988,3 @@ class trials(object):
             B.to_csv(baselines_file)
             print('subject {}, {} events baseline corrected'.format(self.subject,time_locked))
         print('sucess: event_related_baseline_correction')
-    
-

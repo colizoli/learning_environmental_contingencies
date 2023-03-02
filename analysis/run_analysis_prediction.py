@@ -8,11 +8,12 @@ PLOS ONE 2023 https://doi.org/10.1371/journal.pone.0270619
 RUN ANALYSIS FROM HERE
 Python code O.Colizoli 2021 (olympia.colizoli@donders.ru.nl)
 Python 3.6
-================================================
+
 Notes:
 ------
 Phase 1 are trials <= 200
 sub-10 reversed response mappings in raw behavioral log file
+================================================
 """
 
 """
@@ -21,10 +22,8 @@ Importing python packages
 ----------------------- 
 Note: conda install matplotlib # fixed the matplotlib crashing error in 3.6
 """
-import os, sys, datetime, time
-import numpy as np
+import os
 import pandas as pd
-# from IPython import embed as shell # for debugging
 import preprocessing_functions_prediction as pupil_preprocessing
 import higher_level_functions_prediction as higher
 """
